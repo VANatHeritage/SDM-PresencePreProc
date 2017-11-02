@@ -1,7 +1,7 @@
 # SDM-presencePreProc.py
 # Version:  Python 2.7.5
 # Creation Date: 2017-10-31
-# Last Edit: 2017-11-01
+# Last Edit: 2017-11-02
 # Creator:  Kirsten Hazler
 #
 # Summary: 
@@ -20,32 +20,34 @@ class Field:
       self.Length = Length
 
 # Initial fields for editing
-fldSpCode = Field('sp_code', 'TEXT', 8)
-fldSrcTab = Field('src_table', 'TEXT', 15)
-fldSrcID = Field('src_id', 'TEXT', 25)
-fldUse = Field('use', 'SHORT', '')
-fldUseWhy = Field('use_why', 'TEXT', 50)
-fldRev = Field('rev', 'SHORT', '')
-fldDateCalc = Field('dateCalc', 'TEXT', 10)
-fldRA = Field('SFRACalc', 'TEXT', 25)
-fldNeedEdit = Field('needEdit', 'SHORT', '')
-fldIsDup = Field('isDup', 'SHORT', '')
+fldSpCode = Field('sp_code', 'TEXT', 8) # Code to identify species. Example: 'clemaddi'
+fldSrcTab = Field('src_table', 'TEXT', 15) # Code to identify source dataset. Example: 'biotics'
+fldSrcID = Field('src_id', 'TEXT', 25) # Unique ID identifying source table and observation
+fldUse = Field('use', 'SHORT', '') # Binary: Eligible for use in model training (1) or not (0)
+fldUseWhy = Field('use_why', 'TEXT', 50) # Comments on eligibility for use
+fldDateCalc = Field('dateCalc', 'TEXT', 10) # Date in standardized yyyy-mm-dd format
+fldDateFlag = Field('dateFlag', 'SHORT', '') # Flag uncertain year. 0 = certain; 1 = uncertain
+fldRA = Field('SFRACalc', 'TEXT', 25) # Source feature representation accuracy
+fldNeedEdit = Field('needEdit', 'SHORT', '') # Flag for editing. 0 = okay; 1 = needs edits; 2 = edits done
+fldIsDup = Field('isDup', 'SHORT', '') # Flag to identify duplicate records based on src_id field. 0 = no duplicates; 1 = duplicates present; 2 = duplicates have been removed
+fldRev = Field('rev', 'SHORT', '') # Flag for review. 0 = okay; 1 = needs review; 2 = review done
+fldComments = Field('revComments', 'TEXT', 250) # Field for review/editing comments
 
-initFields = [fldSpCode, fldSrcTab, fldSrcID, fldUse, fldUseWhy, fldRev, fldDateCalc, fldRA, fldNeedEdit, fldIsDup]
+initFields = [fldSpCode, fldSrcTab, fldSrcID, fldUse, fldUseWhy, fldDateCalc, fldDateFlag, fldRA, fldNeedEdit, fldIsDup, fldRev, fldComments]
 
 # Additional fields for automation
-fldSFID = Field('SF_ID', 'LONG', '')
-fldEOID = Field('EO_ID', 'LONG', '')
-fldRaScore = Field('raScore', 'SHORT', '')
-fldDateScore = Field('dateScore', 'SHORT', '')
-fldPQI = Field('pqiScore', 'SHORT', '')
-fldGrpID = Field('grpID', 'LONG', '')
-fldGrpUse = Field('grpUse', 'LONG', '')
+fldSFID = Field('SF_ID', 'LONG', '') # Source feature ID (Biotics data only)
+fldEOID = Field('EO_ID', 'LONG', '') # Element occurrence ID (Biotics data only)
+fldRaScore = Field('raScore', 'SHORT', '') # Quality score based on Representation Accuracy
+fldDateScore = Field('dateScore', 'SHORT', '') # Quality score based on date
+fldPQI = Field('pqiScore', 'SHORT', '') # Composite quality score ("Point Quality Index")
+fldGrpID = Field('grpID', 'LONG', '') # Group ID (from spatial clustering)
+fldGrpUse = Field('grpUse', 'LONG', '') # Identifies highest quality records in group (1) versus all other records (0)
 
 addFields = [fldSFID, fldEOID, fldRaScore, fldDateScore, fldPQI, fldGrpID, fldGrpUse]
 
 def AddInitFlds(inPolys, spCode, srcTab, fldID, fldDate, outPolys):
-   '''Add and populate initial standard data fields'''
+   '''Adds and populates initial standard data fields need for data review, QC, and editing. '''
    # Make a fresh copy of the data
    arcpy.CopyFeatures_management (inPolys, outPolys)
    
@@ -112,9 +114,24 @@ def AddInitFlds(inPolys, spCode, srcTab, fldID, fldDate, outPolys):
    arcpy.CalculateField_management (outPolys, fldDateCalc.Name, expression, 'PYTHON', codeblock)
    printMsg('Standard date field populated.')
    
+   # Date certainty (of year)
+   codeblock = """def flagDate(Date):
+      if Date == '0000-00-00':
+         return 1
+      else:
+         return None"""
+   expression = 'flagDate(!%s!)' % fldDateCalc.Name
+   arcpy.CalculateField_management (outPolys, fldDateFlag.Name, expression, 'PYTHON', codeblock)
+   printMsg('Date flag field populated.')
+   
    return outPolys
    
 def CullDuplicates(inPolys, fldSrcID = 'src_id', fldDateCalc = 'dateCalc', fldIsDup = 'isDup'):
+   '''Removes duplicate records where possible; marks records for review.
+   Sets value for 'isDup' field as follows:
+      0 = no duplicates
+      1 = duplicates present
+      2 = duplicates removed'''
    # Get initial record count
    numPolysInit = countFeatures(inPolys)
    printMsg('There are %s polygons to start.' % str(numPolysInit))
@@ -172,7 +189,7 @@ def CullDuplicates(inPolys, fldSrcID = 'src_id', fldDateCalc = 'dateCalc', fldIs
    return inPolys
    
 def MergeData(inList, outPolys):
-   '''Merge multiple datasets into one consolidated set with standard fields.
+   '''Merges multiple input datasets into one consolidated set with standard fields.
    Assumption: Inputs are all in same coordinate system.'''
    # Get spatial reference from first feature class in list.
    sr = arcpy.Describe(inList[0]).spatialReference 
@@ -198,18 +215,60 @@ def MergeData(inList, outPolys):
    return outPolys
    
    
+############################################################################
+###################### USER INPUT SECTION BEGINS HERE ######################
+############################################################################
+
+### Usage Notes:
+
+# - Available functions:
+#     - AddInitFlds(inPolys, spCode, srcTab, fldID, fldDate, outPolys)
+#        - inPolys: the input polygon feature class you want to pre-process
+#        - spCode: the 8-character species code
+#        - srcTab: the data source table code
+#        - fldID: the field containing the record ID you want to use to identify duplicates
+#        - fldDate: the field containing the observation dates
+#        - outPolys: the output feature class
+
+#     - CullDuplicates(inPolys, fldSrcID = 'src_id', fldDateCalc = 'dateCalc', fldIsDup = 'isDup')
+#        - inPolys: the input feature class (typically outPolys from the previous function)
+#        - fldSrcID: field with standardized ID (leave blank; it will use 'src_id')
+#        - fldDateCalc: field with standardized date (leave blank; it will use 'dateCalc')
+#        - fldIsDup: field identifying duplicates (leave blank; it will use 'isDup')
+
+#     - MergeData(inList, outPolys)
+#        - inList: the list of datasets to merge
+#        - outPolys: the output merged polygon feature class
+
+# - Recommended workflow for one species:
+# 1. Run the "AddInitFields" function on the species' Biotics dataset
+# 2. Run the "CullDuplicates" function on the output from step 1
+# 3. Inspect the output. Fix dates as needed, wherever the dateCalc field is '0000-00-00'. 
+      # You can change the dateCalc field to '0000-00-01' if the date cannot be determined and it is a duplicate record that should be culled.
+# 4. Run the #CullDuplicates" function on your output file again, if duplicates remained.
+# 5. Inspect the output and edit as needed.
+      # Set the "use" field to 0 for any records that should not be used, either because it is a remaining duplicate, has an indeterminate date, or for any other reason. Explain reasoning in the "use_why" field if desired. Set the "use" field to 1 for all records still eligible for use in model training.
+      # Assign a representation accuracy value in the "SFRACalc" field. Valid inputs are: very high, high, medium, low, or very low.
+# 6. Repeat steps 1-5 for any additional, non-Biotics data sets for the species, if applicable.
+# 7. Run the "MergeData" function to combine the datasets into one. If you only had Biotics data, run the function on a list containing just the one dataset. The function is still necessary to create additional fields.
+# 8. Run the grouping function [STILL NEED TO WRITE THIS FUNCTION]
+# 9. Review and edit the output as needed.
+      
+
+
 # Use the section below to enable a function (or sequence of functions) to be run directly from this free-standing script (i.e., not as an ArcGIS toolbox tool)
+
 def main():
-   # Set up your variables here
+   # SET UP YOUR VARIABLES HERE
    inBiotics = r'I:\SWAPSPACE\SDM_WorkingGroup\g1g2s2_SDM.gdb\desmorga_dnh'
-   inDGIF = r'I:\SWAPSPACE\SDM_WorkingGroup\g1g2s2_SDM.gdb\desmorga_dgif'
-   outBiotics = r'C:\Testing\Testing.gdb\preProcBiotics'
-   outDGIF = r'C:\Testing\Testing.gdb\preProcDGIF'
-   outMerge = r'C:\Testing\Testing.gdb\preProcMerged'
+   #inDGIF = r'I:\SWAPSPACE\SDM_WorkingGroup\g1g2s2_SDM.gdb\desmorga_dgif'
+   outBiotics = r'C:\Testing\Testing.gdb\preProcBiotics_desmorga3'
+   #outDGIF = r'C:\Testing\Testing.gdb\preProcDGIF'
+   #outMerge = r'C:\Testing\Testing.gdb\preProcMerged'
    
-   # Include the desired function run statement(s) below
-   #AddInitFlds(inBiotics, 'desmorga', 'biotics', 'SF_ID', 'OBSDATE', outBiotics)
-   CullDuplicates(outBiotics)
+   # SET UP THE DESIRED FUNCTION RUN STATEMENTS HERE 
+   AddInitFlds(inBiotics, 'desmorga', 'biotics', 'SF_ID', 'OBSDATE', outBiotics)
+   #CullDuplicates(outBiotics)
    #AddInitFlds(inDGIF, 'desmorga', 'dgif', 'ObsID', 'ObsDate', outDGIF)
    #CullDuplicates(outDGIF)
    #MergeData([outBiotics, outDGIF], outMerge)
