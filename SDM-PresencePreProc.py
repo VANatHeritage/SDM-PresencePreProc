@@ -1,7 +1,7 @@
 # SDM-presencePreProc.py
 # Version:  Python 2.7.5
 # Creation Date: 2017-10-31
-# Last Edit: 2017-11-02
+# Last Edit: 2017-11-06
 # Creator:  Kirsten Hazler
 #
 # Summary: 
@@ -45,6 +45,40 @@ fldGrpID = Field('grpID', 'LONG', '') # Group ID (from spatial clustering)
 fldGrpUse = Field('grpUse', 'LONG', '') # Identifies highest quality records in group (1) versus all other records (0)
 
 addFields = [fldSFID, fldEOID, fldRaScore, fldDateScore, fldPQI, fldGrpID, fldGrpUse]
+
+def SplitBiotics(inFeats, inXwalk, outCode, outGDB):
+   '''Splits a standard input Biotics dataset into multiple datasets based on element codes'''
+   # Convert crosswalk table to GDB table
+   outTab = 'in_memory' + os.sep + 'codeCrosswalk'
+   arcpy.ExcelToTable_conversion (inXwalk, outTab)
+   
+   # Create a data dictionary from the crosswalk table
+   codeDict = TabToDict(outTab, 'ELCODE', outCode)
+   
+   # Get list of unique values in element code field
+   elcodes = unique_values(inFeats, 'ELCODE')
+   
+   for code in elcodes:
+      # Select the records with the element code
+      where_clause = "%s = '%s'" % ('ELCODE', code)
+      arcpy.MakeFeatureLayer_management (inFeats, 'lyrFeats', where_clause)
+      
+      try:
+         # Determine the output name from the data dictionary
+         outName = codeDict[code]
+         outFeats = outGDB + os.sep + outName
+
+         # Export the selected records to a new feature class using the output code as the name
+         arcpy.CopyFeatures_management('lyrFeats', outFeats)
+         printMsg('Created feature class %s for elcode %s' % (outName, code))
+         
+      except:
+         # Export the selected records to a new feature class using elcode as the name
+         printMsg('Unable to find output codename for elcode %s' % code)
+         printMsg('Saving under elcode name instead.')
+         outFeats = outGDB + os.sep + code
+         arcpy.CopyFeatures_management('lyrFeats', outFeats)
+         
 
 def AddInitFlds(inPolys, spCode, srcTab, fldID, fldDate, outPolys):
    '''Adds and populates initial standard data fields need for data review, QC, and editing. '''
@@ -260,18 +294,28 @@ def MergeData(inList, outPolys):
 
 def main():
    # SET UP YOUR VARIABLES HERE
-   inBiotics = r'I:\SWAPSPACE\SDM_WorkingGroup\g1g2s2_SDM.gdb\desmorga_dnh'
+   #inBiotics = r'I:\SWAPSPACE\SDM_WorkingGroup\g1g2s2_SDM.gdb\desmorga_dnh'
    #inDGIF = r'I:\SWAPSPACE\SDM_WorkingGroup\g1g2s2_SDM.gdb\desmorga_dgif'
-   outBiotics = r'C:\Testing\Testing.gdb\preProcBiotics_desmorga3'
+   #outBiotics = r'C:\Testing\Testing.gdb\preProcBiotics_desmorga3'
    #outDGIF = r'C:\Testing\Testing.gdb\preProcDGIF'
-   #outMerge = r'C:\Testing\Testing.gdb\preProcMerged'
+   # outMerge = r'C:\Testing\Testing.gdb\dnhMerge'
+   # fc1 = r'I:\SWAPSPACE\SDM_WorkingGroup\g1g2s2_SDM.gdb\clemaddi_dnh'
+   # fc2 = r'I:\SWAPSPACE\SDM_WorkingGroup\g1g2s2_SDM.gdb\desmorga_dnh'
+   # fc3 = r'I:\SWAPSPACE\SDM_WorkingGroup\g1g2s2_SDM.gdb\speyidal_dnh'
+   # mergeList = [fc1, fc2, fc3]
+   inFeats = r'C:\Testing\Testing.gdb\dnhMerge'
+   inXwalk = r'I:\SWAPSPACE\K_Hazler\From_Anne\g1g2s1SpeciesList.xlsx'
+   outCode = 'CODENAME'
+   outGDB = 'C:\Testing\SpeciesFeatures.gdb'
+   
    
    # SET UP THE DESIRED FUNCTION RUN STATEMENTS HERE 
-   AddInitFlds(inBiotics, 'desmorga', 'biotics', 'SF_ID', 'OBSDATE', outBiotics)
+   #AddInitFlds(inBiotics, 'desmorga', 'biotics', 'SF_ID', 'OBSDATE', outBiotics)
    #CullDuplicates(outBiotics)
    #AddInitFlds(inDGIF, 'desmorga', 'dgif', 'ObsID', 'ObsDate', outDGIF)
    #CullDuplicates(outDGIF)
-   #MergeData([outBiotics, outDGIF], outMerge)
+   #MergeData(mergeList, outMerge)
+   SplitBiotics(inFeats, inXwalk, outCode, outGDB)
    
    # End of user input
    
