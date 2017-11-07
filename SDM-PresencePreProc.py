@@ -46,14 +46,14 @@ fldGrpUse = Field('grpUse', 'LONG', '') # Identifies highest quality records in 
 
 addFields = [fldSFID, fldEOID, fldRaScore, fldDateScore, fldPQI, fldGrpID, fldGrpUse]
 
-def SplitBiotics(inFeats, inXwalk, outCode, outGDB):
+def SplitBiotics(inFeats, inXwalk, fldOutCode, outGDB):
    '''Splits a standard input Biotics dataset into multiple datasets based on element codes'''
    # Convert crosswalk table to GDB table
    outTab = 'in_memory' + os.sep + 'codeCrosswalk'
    arcpy.ExcelToTable_conversion (inXwalk, outTab)
    
    # Create a data dictionary from the crosswalk table
-   codeDict = TabToDict(outTab, 'ELCODE', outCode)
+   codeDict = TabToDict(outTab, 'ELCODE', fldOutCode)
    
    # Get list of unique values in element code field
    elcodes = unique_values(inFeats, 'ELCODE')
@@ -256,6 +256,12 @@ def MergeData(inList, outPolys):
 ### Usage Notes:
 
 # - Available functions:
+#     - SplitBiotics(inFeats, inXwalk, fldOutCode, outGDB)
+#        - inFeats: the input feature class you want to split
+#        - inXwalk: the input crosswalk file (must be an Excel file)
+#        - fldOutCode: the field in the crosswalk table containing the output code to use for feature class names (should not contain any spaces or weird characters)
+#        - outGDB: geodatabase to contain the output feature classes 
+
 #     - AddInitFlds(inPolys, spCode, srcTab, fldID, fldDate, outPolys)
 #        - inPolys: the input polygon feature class you want to pre-process
 #        - spCode: the 8-character species code
@@ -274,7 +280,9 @@ def MergeData(inList, outPolys):
 #        - inList: the list of datasets to merge
 #        - outPolys: the output merged polygon feature class
 
-# - Recommended workflow for one species:
+
+### RECOMMENDED WORKFLOW
+# First, split the master, multiple-species feature class from Biotics into multiple, single-species feature classes using the "SplitBiotics" function. Then, for each species:
 # 1. Run the "AddInitFields" function on the species' Biotics dataset
 # 2. Run the "CullDuplicates" function on the output from step 1
 # 3. Inspect the output. Fix dates as needed, wherever the dateCalc field is '0000-00-00'. 
@@ -294,28 +302,14 @@ def MergeData(inList, outPolys):
 
 def main():
    # SET UP YOUR VARIABLES HERE
-   #inBiotics = r'I:\SWAPSPACE\SDM_WorkingGroup\g1g2s2_SDM.gdb\desmorga_dnh'
-   #inDGIF = r'I:\SWAPSPACE\SDM_WorkingGroup\g1g2s2_SDM.gdb\desmorga_dgif'
-   #outBiotics = r'C:\Testing\Testing.gdb\preProcBiotics_desmorga3'
-   #outDGIF = r'C:\Testing\Testing.gdb\preProcDGIF'
-   # outMerge = r'C:\Testing\Testing.gdb\dnhMerge'
-   # fc1 = r'I:\SWAPSPACE\SDM_WorkingGroup\g1g2s2_SDM.gdb\clemaddi_dnh'
-   # fc2 = r'I:\SWAPSPACE\SDM_WorkingGroup\g1g2s2_SDM.gdb\desmorga_dnh'
-   # fc3 = r'I:\SWAPSPACE\SDM_WorkingGroup\g1g2s2_SDM.gdb\speyidal_dnh'
-   # mergeList = [fc1, fc2, fc3]
    inFeats = r'C:\Testing\Testing.gdb\dnhMerge'
    inXwalk = r'I:\SWAPSPACE\K_Hazler\From_Anne\g1g2s1SpeciesList.xlsx'
-   outCode = 'CODENAME'
+   fldOutCode = 'CODENAME'
    outGDB = 'C:\Testing\SpeciesFeatures.gdb'
    
    
    # SET UP THE DESIRED FUNCTION RUN STATEMENTS HERE 
-   #AddInitFlds(inBiotics, 'desmorga', 'biotics', 'SF_ID', 'OBSDATE', outBiotics)
-   #CullDuplicates(outBiotics)
-   #AddInitFlds(inDGIF, 'desmorga', 'dgif', 'ObsID', 'ObsDate', outDGIF)
-   #CullDuplicates(outDGIF)
-   #MergeData(mergeList, outMerge)
-   SplitBiotics(inFeats, inXwalk, outCode, outGDB)
+   SplitBiotics(inFeats, inXwalk, fldOutCode, outGDB)
    
    # End of user input
    
