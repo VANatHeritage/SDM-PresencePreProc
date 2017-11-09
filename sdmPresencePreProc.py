@@ -293,7 +293,7 @@ def MergeData(inList, outPolys):
       # Assign a representation accuracy value in the "SFRACalc" field. Valid inputs are: very high, high, medium, low, or very low.
 # 6. Repeat steps 1-5 for any additional, non-Biotics data sets for the species, if applicable.
 # 7. Run the "MergeData" function to combine the datasets into one. If you only had Biotics data, run the function on a list containing just the one dataset. The function is still necessary to create additional fields.
-# 8. Run the grouping function [STILL NEED TO WRITE THIS FUNCTION]
+# 8. Run the "SpatialCluster" function to assign features to groups based on proximity.
 # 9. Review and edit the output as needed.
       
 
