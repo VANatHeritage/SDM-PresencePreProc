@@ -19,19 +19,19 @@
 inPolys = r'path\to\input\feature\class'  
 
 # The 8-character species code to be used for modeling
-spCode: 'charcode'
+spCode = 'charcode'
 
 # The code for the data source table
-srcTab: 'biotics' # or some other source code
+srcTab = 'biotics' # or some other source code
 
 # The field (in inPolys) containing the record ID you want to use to identify duplicates
-fldID: 'SF_ID' # or some other field name
+fldID = 'SF_ID' # or some other field name
 
 # The field (in inPolys) containing the observation dates
-fldDate: 'OBSDATE' # or some other field name
+fldDate = 'OBSDATE' # or some other field name
 
 # The output feature class
-outPolys: r'path\to\output\feature\class'
+outPolys = r'path\to\output\feature\class'
 
 ############################################################################
 ####################### USER INPUT SECTION ENDS HERE #######################

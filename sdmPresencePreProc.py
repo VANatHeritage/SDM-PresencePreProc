@@ -41,10 +41,9 @@ fldEOID = Field('EO_ID', 'LONG', '') # Element occurrence ID (Biotics data only)
 fldRaScore = Field('raScore', 'SHORT', '') # Quality score based on Representation Accuracy
 fldDateScore = Field('dateScore', 'SHORT', '') # Quality score based on date
 fldPQI = Field('pqiScore', 'SHORT', '') # Composite quality score ("Point Quality Index")
-fldGrpID = Field('grpID', 'LONG', '') # Group ID (from spatial clustering)
 fldGrpUse = Field('grpUse', 'LONG', '') # Identifies highest quality records in group (1) versus all other records (0)
 
-addFields = [fldSFID, fldEOID, fldRaScore, fldDateScore, fldPQI, fldGrpID, fldGrpUse]
+addFields = [fldSFID, fldEOID, fldRaScore, fldDateScore, fldPQI, fldGrpUse]
 
 def SplitBiotics(inFeats, inXwalk, fldOutCode, outGDB):
    '''Splits a standard input Biotics dataset into multiple datasets based on element codes'''

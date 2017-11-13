@@ -130,6 +130,12 @@ def SpatialCluster (inFeats, fldID, searchDist, fldGrpID = 'grpID'):
    # Initialize trash items list
    trashList = []
    
+   # Delete the GrpID field from the input features, if it already exists.
+   try:
+      arcpy.DeleteField_management (inFeats, fldGrpID)
+   except:
+      pass
+      
    # Buffer input features
    printMsg('Buffering input features')
    outBuff = scratchGDB + os.sep + 'outBuff'

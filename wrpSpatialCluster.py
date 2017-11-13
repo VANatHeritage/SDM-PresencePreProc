@@ -17,7 +17,7 @@
 ############################################################################
 
 # The input features to cluster into groups
-inFeats = r'path\to\input\feature\class'
+inFeats = r'I:\SWAPSPACE\K_Hazler\From_Anne\fromACC.gdb\CEGL3714_merge'
 
 # The field containing unique feature IDs in inFeats
 fldID = 'OBJECTID' # or other field that uniquely identifies each feature
