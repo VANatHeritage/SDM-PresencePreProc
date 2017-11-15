@@ -1,7 +1,7 @@
 # wrpSpatialCluster.py
 # Version:  Python 2.7.5
 # Creation Date: 2017-11-09
-# Last Edit: 2017-11-09
+# Last Edit: 2017-11-14
 # Creator:  Kirsten Hazler
 #
 # Summary: 
@@ -12,12 +12,16 @@
 # The specified search distance should be half of the maximum distance allowed between features in the same cluster. For example if you want features within 500 m of each other to cluster together, enter "250 METERS".
 # -------------------------------------------------------------------------------------
 
+# Import required module and functions
+import Helper
+from Helper import *
+
 ############################################################################
 ###################### USER INPUT SECTION BEGINS HERE ######################
 ############################################################################
 
 # The input features to cluster into groups
-inFeats = r'I:\SWAPSPACE\K_Hazler\From_Anne\fromACC.gdb\CEGL3714_merge'
+inFeats = r'C:\Testing\SpeciesFeatures.gdb\clemaddi_merged' # replace with your data path
 
 # The field containing unique feature IDs in inFeats
 fldID = 'OBJECTID' # or other field that uniquely identifies each feature
@@ -32,11 +36,6 @@ fldGrpID = 'grpID'
 ############################################################################
 ####################### USER INPUT SECTION ENDS HERE #######################
 ############################################################################
-
-
-# Import required module and functions
-import Helper
-from Helper import *
 
 # Run function
 SpatialCluster (inFeats, fldID, searchDist, fldGrpID)

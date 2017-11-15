@@ -159,12 +159,13 @@ def AddInitFlds(inPolys, spCode, srcTab, fldID, fldDate, outPolys):
    
    return outPolys
    
-def CullDuplicates(inPolys, fldSrcID = 'src_id', fldDateCalc = 'dateCalc', fldIsDup = 'isDup'):
+def CullDuplicates(inPolys, fldSrcID, fldDateCalc = 'dateCalc', fldIsDup = 'isDup'):
    '''Removes duplicate records where possible; marks records for review.
    Sets value for 'isDup' field as follows:
       0 = no duplicates
       1 = duplicates present
       2 = duplicates removed'''
+
    # Get initial record count
    numPolysInit = countFeatures(inPolys)
    printMsg('There are %s polygons to start.' % str(numPolysInit))
@@ -183,6 +184,8 @@ def CullDuplicates(inPolys, fldSrcID = 'src_id', fldDateCalc = 'dateCalc', fldIs
       
       # Count the records
       numPolys = countFeatures('lyrPolys')
+      
+      print 'Your field name is %s' % fldIsDup
       
       if numPolys == 1:
          # set isDup to 0
@@ -301,14 +304,21 @@ def MergeData(inList, outPolys):
 
 def main():
    # SET UP YOUR VARIABLES HERE
-   inFeats = r'C:\Testing\Testing.gdb\dnhMerge'
-   inXwalk = r'I:\SWAPSPACE\K_Hazler\From_Anne\g1g2s1SpeciesList.xlsx'
-   fldOutCode = 'CODENAME'
-   outGDB = 'C:\Testing\SpeciesFeatures.gdb'
+   # The input feature class (typically outPolys from the AddInitFlds function)
+   inPolys = r'C:\Testing\SpeciesFeatures.gdb\clemaddi_proc'
+
+   # The field containing the standardized ID (you should not have to change this)
+   fldSrcID = 'src_id'
+
+   # The field containing the standardized date (you should not have to change this)
+   fldDateCalc = 'dateCalc'
+
+   # The field identifying duplicates (you should not have to change this)
+   fldIsDup = 'isDup' 
    
    
    # SET UP THE DESIRED FUNCTION RUN STATEMENTS HERE 
-   SplitBiotics(inFeats, inXwalk, fldOutCode, outGDB)
+   CullDuplicates(inPolys, fldSrcID, fldDateCalc, fldIsDup)
    
    # End of user input
    

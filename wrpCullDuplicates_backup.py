@@ -1,7 +1,7 @@
 # wrpCullDuplicates.py
 # Version:  Python 2.7.5
 # Creation Date: 2017-11-09
-# Last Edit: 2017-11-14
+# Last Edit: 2017-11-09
 # Creator:  Kirsten Hazler
 #
 # Summary: 
@@ -14,29 +14,30 @@
 # This should be run after AddInitFlds, and before MergeData.
 # -------------------------------------------------------------------------------------
 
-# Import Helper module and functions
-import sdmPresencePreProc
-from sdmPresencePreProc import *
-
 ############################################################################
 ###################### USER INPUT SECTION BEGINS HERE ######################
 ############################################################################
 
 # The input feature class (typically outPolys from the AddInitFlds function)
-inPolys = r'C:\Testing\SpeciesFeatures.gdb\clemaddi_proc' # replace with your data path
+inPolys = r'path\to\input\feature\class'
 
 # The field containing the standardized ID (you should not have to change this)
-SrcID_field = 'src_id'
+fldSrcID = 'src_id'
 
 # The field containing the standardized date (you should not have to change this)
-DateCalc_field = 'dateCalc'
+fldDateCalc = 'dateCalc'
 
 # The field identifying duplicates (you should not have to change this)
-IsDup_field = 'isDup' 
+fldIsDup = 'isDup' 
 
 ############################################################################
 ####################### USER INPUT SECTION ENDS HERE #######################
 ############################################################################
 
+
+# Import required module and functions
+import sdmPresencePreProc
+from sdmPresencePreProc import *
+
 # Run function
-CullDuplicates(inPolys, SrcID_field, DateCalc_field, IsDup_field)
+CullDuplicates(inPolys, fldSrcID, fldDateCalc, fldIsDup)
