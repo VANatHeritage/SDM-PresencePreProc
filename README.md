@@ -16,7 +16,7 @@ The functions should be run in this order:
 - SpatialCluster: Groups features spatially into clusters based on a specified search distance
 
 Still to do: 
-- Function to populate the raScore, dateScore, pqiScore, and grpUse fields (still need to work out details of how we want to implement)
+- Write function to populate the raScore, dateScore, pqiScore, and grpUse fields (still need to work out details of how we want to implement)
 
 Direct any questions and bug reports to Kirsten Hazler.
 Last update: 2017-11-29
