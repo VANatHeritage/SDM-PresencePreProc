@@ -223,11 +223,14 @@ def CullDuplicates(inPolys, fldSrcID, fldDateCalc = 'dateCalc', fldIsDup = 'isDu
    
    return inPolys
    
-def MergeData(inList, outPolys):
+def MergeData(inList, outPolys, spatialRef = "#"):
    '''Merges multiple input datasets into one consolidated set with standard fields.
    Assumption: Inputs are all in same coordinate system.'''
    # Get spatial reference from first feature class in list.
-   sr = arcpy.Describe(inList[0]).spatialReference 
+   if spatialRef == '#':
+      sr = arcpy.Describe(inList[0]).spatialReference
+   else: 
+      sr = arcpy.Describe(spatialRef).spatialReference
    
    # Make a new polygon feature class for output
    basename = os.path.basename(outPolys)
@@ -280,6 +283,7 @@ def MergeData(inList, outPolys):
 #     - MergeData(inList, outPolys)
 #        - inList: the list of datasets to merge
 #        - outPolys: the output merged polygon feature class
+#        - spatialRef: a feature class with the template projection. If not specified, the projection from the first in the list will be used.
 
 
 ### RECOMMENDED WORKFLOW
@@ -288,7 +292,7 @@ def MergeData(inList, outPolys):
 # 2. Run the "CullDuplicates" function on the output from step 1
 # 3. Inspect the output. Fix dates as needed, wherever the dateCalc field is '0000-00-00'. 
       # You can change the dateCalc field to '0000-00-01' if the date cannot be determined and it is a duplicate record that should be culled.
-# 4. Run the #CullDuplicates" function on your output file again, if duplicates remained.
+# 4. Run the "CullDuplicates" function on your output file again, if duplicates remained.
 # 5. Inspect the output and edit as needed.
       # Set the "use" field to 0 for any records that should not be used, either because it is a remaining duplicate, has an indeterminate date, or for any other reason. Explain reasoning in the "use_why" field if desired. Set the "use" field to 1 for all records still eligible for use in model training.
       # Assign a representation accuracy value in the "SFRACalc" field. Valid inputs are: very high, high, medium, low, or very low.
