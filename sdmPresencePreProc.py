@@ -78,7 +78,6 @@ def SplitBiotics(inFeats, inXwalk, fldOutCode, outGDB):
          outFeats = outGDB + os.sep + code
          arcpy.CopyFeatures_management('lyrFeats', outFeats)
          
-
 def AddInitFlds(inPolys, spCode, srcTab, fldID, fldDate, outPolys):
    '''Adds and populates initial standard data fields need for data review, QC, and editing. '''
    # Make a fresh copy of the data
