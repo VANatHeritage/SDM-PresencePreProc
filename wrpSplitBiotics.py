@@ -16,18 +16,20 @@
 ############################################################################
 
 # The input feature class containing Biotics data that you want to split
-inFeats = r'path\to\input\feature\class' 
+inFeats = r'C:\David\scratch\sdmPresencePreProc_testing\biotics\biotics_SF_orig.shp' 
+
+# The file geodatabase to contain the output feature classes
+# You must have already created this.
+outGDB = r'C:\David\scratch\sdmPresencePreProc_testing\biotics\split2.gdb'  
 
 # The input crosswalk file (must be an Excel file)
+# Leave this as '#' to derive names from the SNAME of the species
 inXwalk = r'path\to\crosswalk\table'  
 
 # The field in the crosswalk table containing the output code to use for feature class names
 # This should not contain any spaces or weird characters!
+# Leave this as '#' to derive names from the SNAME of the species
 fldOutCode = 'NameOfField' 
-
-# The file geodatabase to contain the output feature classes
-# You must have already created this.
-outGDB = r'path\to\geodatabase'  
 
 ############################################################################
 ####################### USER INPUT SECTION ENDS HERE #######################
@@ -39,4 +41,4 @@ import sdmPresencePreProc
 from sdmPresencePreProc import *
 
 # Run function
-SplitBiotics(inFeats, inXwalk, fldOutCode, outGDB)
+SplitBiotics(inFeats, outGDB, inXwalk = "#", fldOutCode = "#")

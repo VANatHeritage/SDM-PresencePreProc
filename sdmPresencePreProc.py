@@ -20,7 +20,7 @@ class Field:
       self.Length = Length
 
 # Initial fields for editing
-fldSpCode = Field('sp_code', 'TEXT', 8) # Code to identify species. Example: 'clemaddi'
+fldSpCode = Field('sp_code', 'TEXT', 12) # Code to identify species. Example: 'clemaddi'. If subspecies, use 12 letter code
 fldSrcTab = Field('src_table', 'TEXT', 15) # Code to identify source dataset. Example: 'biotics'
 fldSrcID = Field('src_id', 'TEXT', 50) # Unique ID identifying source table and observation
 fldUse = Field('use', 'SHORT', '') # Binary: Eligible for use in model training (1) or not (0)
@@ -46,14 +46,8 @@ fldGrpUse = Field('grpUse', 'LONG', '') # Identifies highest quality records in 
 
 addFields = [fldSFID, fldEOID, fldRaScore, fldDateScore, fldPQI, fldGrpUse]
 
-def SplitBiotics(inFeats, inXwalk, fldOutCode, outGDB):
+def SplitBiotics(inFeats, outGDB, inXwalk = "#", fldOutCode = "#"):
    '''Splits a standard input Biotics dataset into multiple datasets based on element codes'''
-   # Convert crosswalk table to GDB table
-   outTab = 'in_memory' + os.sep + 'codeCrosswalk'
-   arcpy.ExcelToTable_conversion (inXwalk, outTab)
-   
-   # Create a data dictionary from the crosswalk table
-   codeDict = TabToDict(outTab, 'ELCODE', fldOutCode)
    
    # Get list of unique values in element code field
    elcodes = unique_values(inFeats, 'ELCODE')
@@ -63,22 +57,39 @@ def SplitBiotics(inFeats, inXwalk, fldOutCode, outGDB):
       where_clause = "%s = '%s'" % ('ELCODE', code)
       arcpy.MakeFeatureLayer_management (inFeats, 'lyrFeats', where_clause)
       
-      try:
-         # Determine the output name from the data dictionary
-         outName = codeDict[code]
-         outFeats = outGDB + os.sep + outName
+      # generate species code from SNAME
+      spCode = unique_values('lyrFeats', 'SNAME')[0]
+      spCode = spCode.replace('(','').replace(')', '') # remove parentheses
+      spCode = spCode.replace('var. ','').replace('ssp. ','') # remove var. and ssp.
+      spCode = (spCode.lower()).split(" ")[0:3]
+      spCode = ''.join([i[0:4] for i in spCode])
+      
+      if inXwalk != '#':
+         # Convert crosswalk table to GDB table
+         outTab = 'in_memory' + os.sep + 'codeCrosswalk'
+         arcpy.ExcelToTable_conversion (inXwalk, outTab)
+         # Create a data dictionary from the crosswalk table
+         codeDict = TabToDict(outTab, 'ELCODE', fldOutCode)
+         
+         try:
+            # Determine the output name from the data dictionary
+            outName = codeDict[code]
+            outFeats = outGDB + os.sep + outName
+   
+            # Export the selected records to a new feature class using the output code as the name
+            arcpy.CopyFeatures_management('lyrFeats', outFeats)
+            printMsg('Created feature class %s for elcode %s' % (outName, code))
+            
+         except:
+            # Export the selected records to a new feature class using elcode as the name
+            printMsg('Unable to find output codename for elcode %s' % code)
+            printMsg('Saving under derived name instead.')
+            outFeats = outGDB + os.sep + spCode
+            arcpy.CopyFeatures_management('lyrFeats', outFeats)
+      else:
+         outFeats = outGDB + os.sep + spCode
+         arcpy.CopyFeatures_management('lyrFeats', outFeats)
 
-         # Export the selected records to a new feature class using the output code as the name
-         arcpy.CopyFeatures_management('lyrFeats', outFeats)
-         printMsg('Created feature class %s for elcode %s' % (outName, code))
-         
-      except:
-         # Export the selected records to a new feature class using elcode as the name
-         printMsg('Unable to find output codename for elcode %s' % code)
-         printMsg('Saving under elcode name instead.')
-         outFeats = outGDB + os.sep + code
-         arcpy.CopyFeatures_management('lyrFeats', outFeats)
-         
 def AddInitFlds(inPolys, spCode, srcTab, fldID, fldDate, outPolys):
    '''Adds and populates initial standard data fields need for data review, QC, and editing. '''
    # check if polygon type
