@@ -202,15 +202,18 @@ def unique_values(table, field):
 ##################################################################################################################
 # Use the main function below to run a function directly from Python IDE or command line with hard-coded variables
 
-def main():
-   # Set up variables
-   inFeats = r'E:\ConsVision_RecMod\Terrestrial\Input\TerrestrialFacilities.shp'
-   fldID =  'FID'
-   searchDist = '250 METERS'
-   fldGrpID = 'grpID_500m'
-   
-   # Specify function to run
-   SpatialCluster (inFeats, fldID, searchDist, fldGrpID)
-
-if __name__ == '__main__':
-   main()
+#==============================================================================
+# def main():
+#    # Set up variables
+#    inFeats = r'E:\ConsVision_RecMod\Terrestrial\Input\TerrestrialFacilities.shp'
+#    fldID =  'FID'
+#    searchDist = '250 METERS'
+#    fldGrpID = 'grpID_500m'
+#    
+#    # Specify function to run
+#    SpatialCluster (inFeats, fldID, searchDist, fldGrpID)
+# 
+# if __name__ == '__main__':
+#    main()
+# 
+#==============================================================================

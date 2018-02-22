@@ -22,7 +22,7 @@ class Field:
 # Initial fields for editing
 fldSpCode = Field('sp_code', 'TEXT', 8) # Code to identify species. Example: 'clemaddi'
 fldSrcTab = Field('src_table', 'TEXT', 15) # Code to identify source dataset. Example: 'biotics'
-fldSrcID = Field('src_id', 'TEXT', 25) # Unique ID identifying source table and observation
+fldSrcID = Field('src_id', 'TEXT', 50) # Unique ID identifying source table and observation
 fldUse = Field('use', 'SHORT', '') # Binary: Eligible for use in model training (1) or not (0)
 fldUseWhy = Field('use_why', 'TEXT', 50) # Comments on eligibility for use
 fldDateCalc = Field('dateCalc', 'TEXT', 10) # Date in standardized yyyy-mm-dd format
@@ -34,6 +34,7 @@ fldRev = Field('rev', 'SHORT', '') # Flag for review. 0 = okay; 1 = needs review
 fldComments = Field('revComments', 'TEXT', 250) # Field for review/editing comments
 
 initFields = [fldSpCode, fldSrcTab, fldSrcID, fldUse, fldUseWhy, fldDateCalc, fldDateFlag, fldRA, fldNeedEdit, fldIsDup, fldRev, fldComments]
+initDissList = ['sp_code','src_table','src_id','use','use_why','dateCalc','dateFlag','SFRACalc','needEdit','isDup','rev','revComments','SF_ID','EO_ID','raScore','dateScore','pqiScore','grpUse',"Shape_Length", "Shape_Area"]
 
 # Additional fields for automation
 fldSFID = Field('SF_ID', 'LONG', '') # Source feature ID (Biotics data only)
@@ -80,13 +81,20 @@ def SplitBiotics(inFeats, inXwalk, fldOutCode, outGDB):
          
 def AddInitFlds(inPolys, spCode, srcTab, fldID, fldDate, outPolys):
    '''Adds and populates initial standard data fields need for data review, QC, and editing. '''
+   # check if polygon type
+   if arcpy.Describe(inPolys).shapeType != 'Polygon':
+      raise Exception('Input dataset is not of type Polygon. Convert to polygon and re-run.')
+   
    # Make a fresh copy of the data
    arcpy.CopyFeatures_management (inPolys, outPolys)
    
    # Add all the initial fields
    for f in initFields:
-      arcpy.AddField_management (outPolys, f.Name, f.Type, '', '', f.Length)
-      printMsg('Field %s added.' % f.Name)
+      try:
+         arcpy.AddField_management (outPolys, f.Name, f.Type, '', '', f.Length)
+         printMsg('Field %s added.' % f.Name)
+      except:
+         printMsg('Field %s already exists. Skipping...' % f.Name)
    
    # Populate some fields
    # Source table
@@ -174,48 +182,52 @@ def CullDuplicates(inPolys, fldSrcID, fldDateCalc = 'dateCalc', fldIsDup = 'isDu
    numID = len(idList)
    printMsg('There are %s unique IDs.' % str(numID))
    
-   for id in idList:
-      printMsg('Working on ID %s' %id)
-      
-      # Select the set of records with that ID
-      where_clause1 = "%s = '%s'" % (fldSrcID, id)
-      arcpy.MakeFeatureLayer_management (inPolys, 'lyrPolys', where_clause1)
-      
-      # Count the records
-      numPolys = countFeatures('lyrPolys')
-      
-      print 'Your field name is %s' % fldIsDup
-      
-      if numPolys == 1:
-         # set isDup to 0
-         arcpy.CalculateField_management ('lyrPolys', fldIsDup, 0, 'PYTHON')
-         printMsg('There are no duplicate records for this ID.')
-      else:
-         # set isDup to 1
-         arcpy.CalculateField_management ('lyrPolys', fldIsDup, 1, 'PYTHON')
-         printMsg('This ID has duplicate records. Culling...')
+   if numPolysInit != numID:
+      for id in idList:
+         printMsg('Working on ID %s' %id)
          
-         # Find the maximum standard date value
-         dateList = unique_values('lyrPolys', fldDateCalc)
-         maxDate = max(dateList)
-      
-         # Select any records where the date is less than the maximum AND the date is not 0000-00-00
-         where_clause2 = "%s < '%s' AND %s <> '0000-00-00'" % (fldDateCalc, maxDate, fldDateCalc)
-         arcpy.MakeFeatureLayer_management ('lyrPolys', 'dupPolys', where_clause2)
-         
-         # Delete the selected records
-         arcpy.DeleteRows_management ('dupPolys')
-         
-         # Count the remaining records
+         # Select the set of records with that ID
+         where_clause1 = "%s = '%s'" % (fldSrcID, id)
          arcpy.MakeFeatureLayer_management (inPolys, 'lyrPolys', where_clause1)
+         
+         # Count the records
          numPolys = countFeatures('lyrPolys')
+         
+         print 'Your field name is %s' % fldIsDup
+         
          if numPolys == 1:
-            # set isDup to 2
-            arcpy.CalculateField_management ('lyrPolys', fldIsDup, 2, 'PYTHON')
-            printMsg('No duplicates remain for this ID.')
+            # set isDup to 0
+            arcpy.CalculateField_management ('lyrPolys', fldIsDup, 0, 'PYTHON')
+            printMsg('There are no duplicate records for this ID.')
          else:
-            printMsg('There are still duplicates for this ID that will need to be manually removed.')
-   
+            # set isDup to 1
+            arcpy.CalculateField_management ('lyrPolys', fldIsDup, 1, 'PYTHON')
+            printMsg('This ID has duplicate records. Culling...')
+            
+            # Find the maximum standard date value
+            dateList = unique_values('lyrPolys', fldDateCalc)
+            maxDate = max(dateList)
+         
+            # Select any records where the date is less than the maximum AND the date is not 0000-00-00
+            where_clause2 = "%s < '%s' AND %s <> '0000-00-00'" % (fldDateCalc, maxDate, fldDateCalc)
+            arcpy.MakeFeatureLayer_management ('lyrPolys', 'dupPolys', where_clause2)
+            
+            # Delete the selected records
+            arcpy.DeleteRows_management ('dupPolys')
+            
+            # Count the remaining records
+            arcpy.MakeFeatureLayer_management (inPolys, 'lyrPolys', where_clause1)
+            numPolys = countFeatures('lyrPolys')
+            if numPolys == 1:
+               # set isDup to 2
+               arcpy.CalculateField_management ('lyrPolys', fldIsDup, 2, 'PYTHON')
+               printMsg('No duplicates remain for this ID.')
+            else:
+               printMsg('There are still duplicates for this ID that will need to be manually removed.')
+   else:
+      arcpy.MakeFeatureLayer_management (inPolys, 'lyrPolys')
+      arcpy.CalculateField_management ('lyrPolys', fldIsDup, 0, 'PYTHON')
+
    # Get final record count
    numPolysFinal = countFeatures(inPolys)
    printMsg('There are %s polygons remaining after cull.' % str(numPolysFinal))
@@ -231,23 +243,50 @@ def MergeData(inList, outPolys, spatialRef = "#"):
       sr = arcpy.Describe(inList[0]).spatialReference
    else: 
       sr = arcpy.Describe(spatialRef).spatialReference
-   
+      
    # Make a new polygon feature class for output
-   basename = os.path.basename(outPolys)
+   basename = os.path.basename(outPolys) + '_temp'
    dirname = os.path.dirname(outPolys)
+   outPolys_temp = dirname + os.sep + basename
    arcpy.CreateFeatureclass_management (dirname, basename, 'POLYGON', '', '', '', sr)
    printMsg('Output feature class initiated.')
    
+   # union individual layers
+   inList_u = []
+   for i in inList:
+      inList_u.append(i + "_u")
+   for i in range(0,len(inList)):
+      u = arcpy.Union_analysis(inList[i], inList_u[i])
+      # ud = arcpy.Dissolve_management(u, i + '_ud', ["SFRACalc","dateCalc"], [["src_id","FIRST"]], "SINGLE_PART")
+
    # Add fields to the output
    for f in initFields:
-      arcpy.AddField_management (outPolys, f.Name, f.Type, '', '', f.Length)
+      arcpy.AddField_management (outPolys_temp, f.Name, f.Type, '', '', f.Length)
       printMsg('Field %s added.' % f.Name)
    for f in addFields:
-      arcpy.AddField_management (outPolys, f.Name, f.Type, '', '', f.Length)
+      arcpy.AddField_management (outPolys_temp, f.Name, f.Type, '', '', f.Length)
       printMsg('Field %s added.' % f.Name)
    
    # Append the dataset to the output
-   arcpy.Append_management (inList, outPolys, 'NO_TEST')
+   # union individual layers with respect to all layers
+   inList_u2 = []
+   for i in inList:
+      inList_u2.append(i + "_u2")
+   
+   nums = range(0,len(inList))
+   for i in nums:
+      nums2 = range(0,len(inList))
+      nums2.remove(i)
+      ul = [inList_u[x] for x in [i] + nums2]
+      u_all = arcpy.Union_analysis(ul, dirname + os.sep + "union_all")
+      fld = 'FID_' + arcpy.Describe(ul[0]).name
+      arcpy.Select_analysis(u_all, inList_u2[i], where_clause = fld + " <> -1")
+      arcpy.Append_management (inList_u2[i], outPolys_temp, 'NO_TEST')
+      # dissolve eliminates polys that are EXACT duplicates, since initDissList includes all fields
+      arcpy.Dissolve_management(outPolys_temp, outPolys, initDissList, "", "SINGLE_PART")
+   
+   # get rid of all temp files
+   garbagePickup(inList_u + inList_u2 + [outPolys_temp] + [dirname + os.sep + "union_all"])
    printMsg('Data merge complete.')
    
    return outPolys
@@ -305,25 +344,27 @@ def MergeData(inList, outPolys, spatialRef = "#"):
 
 # Use the section below to enable a function (or sequence of functions) to be run directly from this free-standing script (i.e., not as an ArcGIS toolbox tool)
 
-def main():
-   # SET UP YOUR VARIABLES HERE
-   # The input feature class (typically outPolys from the AddInitFlds function)
-   inPolys = r'C:\Testing\SpeciesFeatures.gdb\clemaddi_proc'
-
-   # The field containing the standardized ID (you should not have to change this)
-   fldSrcID = 'src_id'
-
-   # The field containing the standardized date (you should not have to change this)
-   fldDateCalc = 'dateCalc'
-
-   # The field identifying duplicates (you should not have to change this)
-   fldIsDup = 'isDup' 
-   
-   
-   # SET UP THE DESIRED FUNCTION RUN STATEMENTS HERE 
-   CullDuplicates(inPolys, fldSrcID, fldDateCalc, fldIsDup)
-   
-   # End of user input
-   
-if __name__ == '__main__':
-   main()
+#==============================================================================
+# def main():
+#    # SET UP YOUR VARIABLES HERE
+#    # The input feature class (typically outPolys from the AddInitFlds function)
+#    inPolys = r'C:\Testing\SpeciesFeatures.gdb\clemaddi_proc'
+# 
+#    # The field containing the standardized ID (you should not have to change this)
+#    fldSrcID = 'src_id'
+# 
+#    # The field containing the standardized date (you should not have to change this)
+#    fldDateCalc = 'dateCalc'
+# 
+#    # The field identifying duplicates (you should not have to change this)
+#    fldIsDup = 'isDup' 
+#    
+#    
+#    # SET UP THE DESIRED FUNCTION RUN STATEMENTS HERE 
+#    CullDuplicates(inPolys, fldSrcID, fldDateCalc, fldIsDup)
+#    
+#    # End of user input
+#    
+# if __name__ == '__main__':
+#    main()
+#==============================================================================

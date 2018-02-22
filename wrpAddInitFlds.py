@@ -20,23 +20,23 @@ from sdmPresencePreProc import *
 ############################################################################
 
 # The input polygon feature class you want to pre-process
-inPolys = r'C:\Testing\SpeciesFeatures.gdb\clemaddi'  # replace with your data path
+inPolys = r'D:\David\arcmap_wd\isotmede_processingJan2017\sdmPresencePreProc\toolout\isotmede.shp'  # replace with your data path
 
 # The 8-character species code to be used for modeling
-spCode = 'clemaddi' # or some other species code
+spCode = 'isotmede' # or some other species code
 
 # The code for the data source table
-srcTab = 'biotics' # or some other source code
+srcTab = 'isotmedeorig' # or some other source code
 
 # The field (in inPolys) containing the record ID you want to use to identify duplicates
-fldID = 'SF_ID' # or some other field name
+fldID = 'FEATURE_ID' # or some other field name
 
 # The field (in inPolys) containing the observation dates
 fldDate = 'OBSDATE' # or some other field name
 
-# The output feature class
-outPolys = r'C:\Testing\SpeciesFeatures.gdb\clemaddi_proc'  # replace with your data path
+# The output feature class; best to use a file geodatabase
 
+outPolys = r'D:\David\arcmap_wd\isotmede_processingJan2017\sdmPresencePreProc\toolout\toolout.gdb\isotmedeorig' # replace with your data path;
 ############################################################################
 ####################### USER INPUT SECTION ENDS HERE #######################
 ############################################################################

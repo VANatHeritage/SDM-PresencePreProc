@@ -23,7 +23,7 @@ from sdmPresencePreProc import *
 ############################################################################
 
 # The input feature class (typically outPolys from the AddInitFlds function)
-inPolys = r'C:\Testing\SpeciesFeatures.gdb\clemaddi_proc' # replace with your data path
+inPolys = r'D:\David\arcmap_wd\isotmede_processingJan2017\sdmPresencePreProc\toolout\toolout.gdb\isotmedeorig' # replace with your data path
 
 # The field containing the standardized ID (you should not have to change this)
 SrcID_field = 'src_id'
