@@ -20,7 +20,7 @@ inFeats = r'C:\David\scratch\sdmPresencePreProc_testing\biotics\biotics_SF_orig.
 
 # The file geodatabase to contain the output feature classes
 # You must have already created this.
-outGDB = r'C:\David\scratch\sdmPresencePreProc_testing\biotics\split2.gdb'  
+outGDB = r'C:\David\scratch\sdmPresencePreProc_testing\biotics\split3.gdb'  
 
 # The input crosswalk file (must be an Excel file)
 # Leave this as '#' to derive names from the SNAME of the species
@@ -30,6 +30,9 @@ inXwalk = r'path\to\crosswalk\table'
 # This should not contain any spaces or weird characters!
 # Leave this as '#' to derive names from the SNAME of the species
 fldOutCode = 'NameOfField' 
+
+# This is a switch which will run the AddInitFields process if True
+init = True
 
 ############################################################################
 ####################### USER INPUT SECTION ENDS HERE #######################
@@ -41,4 +44,4 @@ import sdmPresencePreProc
 from sdmPresencePreProc import *
 
 # Run function
-SplitBiotics(inFeats, outGDB, inXwalk = "#", fldOutCode = "#")
+SplitBiotics(inFeats, outGDB, inXwalk = "#", fldOutCode = "#", init  = True)

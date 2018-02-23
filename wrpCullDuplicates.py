@@ -23,20 +23,20 @@ from sdmPresencePreProc import *
 ############################################################################
 
 # The input feature class (typically outPolys from the AddInitFlds function)
-inPolys = r'D:\David\arcmap_wd\isotmede_processingJan2017\sdmPresencePreProc\toolout\toolout.gdb\isotmedeorig' # replace with your data path
+inPolys = r'C:\David\scratch\sdmPresencePreProc_testing\isotmede\isotmede.gdb\isotmede_merged' # replace with your data path
 
 # The field containing the standardized ID (you should not have to change this)
-SrcID_field = 'src_id'
+fldSrcID = 'src_id'
 
 # The field containing the standardized date (you should not have to change this)
-DateCalc_field = 'dateCalc'
+fldDateCalc = 'dateCalc'
 
 # The field identifying duplicates (you should not have to change this)
-IsDup_field = 'isDup' 
+fldIsDup = 'isDup' 
 
 ############################################################################
 ####################### USER INPUT SECTION ENDS HERE #######################
 ############################################################################
 
 # Run function
-CullDuplicates(inPolys, SrcID_field, DateCalc_field, IsDup_field)
+CullDuplicates(inPolys, fldSrcID, fldDateCalc, fldIsDup)

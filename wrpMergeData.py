@@ -22,25 +22,24 @@ from sdmPresencePreProc import *
 ############################################################################
 
 # Input data
-# bioticsData = r'C:\Testing\SpeciesFeatures.gdb\clemaddi_proc' # replace with your data path
-# otherData = r'D:\David\arcmap_wd\isotmede_processingJan2017\sdmPresencePreProc\toolout\toolout.gdb' # replace with your data path, or comment out
-
-# The list of feature classes to merge.  These must be contained within brackets, separated by commas. 
-# It is okay to have just one feature class in the list, but it must be in brackets.
-inList = [r'D:\David\arcmap_wd\isotmede_processingJan2017\sdmPresencePreProc\toolout\toolout.gdb\swp1']#,
-         # r'D:\David\arcmap_wd\isotmede_processingJan2017\sdmPresencePreProc\toolout\toolout.gdb\tool1',
-         #  r'D:\David\arcmap_wd\isotmede_processingJan2017\sdmPresencePreProc\toolout\toolout.gdb\isotmedeorig'] # Use this line if the only input is bioticsData
-# inList = [bioticsData, otherData] # Uncomment this line and comment out the previous if you have multiple datasets
+# Working geodatabase, and optionally where to get input data from. Default (if inList is '#') is to take all feature classes from here and merge them.
+inGDB = 'C:\David\scratch\sdmPresencePreProc_testing\isotmede\isotmede.gdb'
 
 # The output merged feature class
-outPolys = r'D:\David\arcmap_wd\isotmede_processingJan2017\sdmPresencePreProc\toolout\toolout.gdb\isotmede_merged' # replace with your data path
+outPolys = r'C:\David\scratch\sdmPresencePreProc_testing\isotmede\isotmede.gdb\isotmede_merged' # replace with your data path
+
+# The list of feature classes to merge. These must be contained within brackets, separated by commas.
+# It is okay to have just one feature class in the list, but it must be in brackets.
+# You can leave it as default ("#"), and all feature classes from inGDB will be merged.
+# inList = "#"
+inList = ['SWP_buff','ISOMEDdiversity_buff','isotmede']
 
 # A feature class with the template projection for the merged dataset
-spatialRef = r'D:\David\arcmap_wd\isotmede_processingJan2017\sdmPresencePreProc\toolout\toolout.gdb\swp1'
+spatialRef = r'C:\David\scratch\sdmPresencePreProc_testing\isotmede\isotmede.gdb\SWP_buff'
 
 ############################################################################
 ####################### USER INPUT SECTION ENDS HERE #######################
 ############################################################################
 
 # Run function
-MergeData(inList, outPolys, spatialRef)
+MergeData(inGDB, outPolys, inList, spatialRef)

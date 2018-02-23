@@ -1,7 +1,7 @@
 # SDM-presencePreProc.py
 # Version:  Python 2.7.5
 # Creation Date: 2017-10-31
-# Last Edit: 2017-11-13
+# Last Edit: 2018-02-22
 # Creator:  Kirsten Hazler
 #
 # Summary: 
@@ -21,8 +21,8 @@ class Field:
 
 # Initial fields for editing
 fldSpCode = Field('sp_code', 'TEXT', 12) # Code to identify species. Example: 'clemaddi'. If subspecies, use 12 letter code
-fldSrcTab = Field('src_table', 'TEXT', 15) # Code to identify source dataset. Example: 'biotics'
-fldSrcID = Field('src_id', 'TEXT', 50) # Unique ID identifying source table and observation
+fldSrcTab = Field('src_table', 'TEXT', 50) # Code to identify source dataset. Example: 'biotics'
+fldSrcID = Field('src_id', 'TEXT', 60) # Unique ID identifying source table and observation
 fldUse = Field('use', 'SHORT', '') # Binary: Eligible for use in model training (1) or not (0)
 fldUseWhy = Field('use_why', 'TEXT', 50) # Comments on eligibility for use
 fldDateCalc = Field('dateCalc', 'TEXT', 10) # Date in standardized yyyy-mm-dd format
@@ -34,11 +34,11 @@ fldRev = Field('rev', 'SHORT', '') # Flag for review. 0 = okay; 1 = needs review
 fldComments = Field('revComments', 'TEXT', 250) # Field for review/editing comments
 
 initFields = [fldSpCode, fldSrcTab, fldSrcID, fldUse, fldUseWhy, fldDateCalc, fldDateFlag, fldRA, fldNeedEdit, fldIsDup, fldRev, fldComments]
-initDissList = ['sp_code','src_table','src_id','use','use_why','dateCalc','dateFlag','SFRACalc','needEdit','isDup','rev','revComments','SF_ID','EO_ID','raScore','dateScore','pqiScore','grpUse',"Shape_Length", "Shape_Area"]
+initDissList = ['sp_code','src_table','src_id','use','use_why','dateCalc','dateFlag','SFRACalc','needEdit','isDup','rev','revComments','SF_ID','EO_ID','raScore','dateScore','pqiScore','grpUse']
 
 # Additional fields for automation
 fldSFID = Field('SF_ID', 'LONG', '') # Source feature ID (Biotics data only)
-fldEOID = Field('EO_ID', 'LONG', '') # Element occurrence ID (Biotics data only)
+fldEOID = Field('EO_ID', 'LONG', '') # Element occurrence ID (interpreted for non-Biotics data)
 fldRaScore = Field('raScore', 'SHORT', '') # Quality score based on Representation Accuracy
 fldDateScore = Field('dateScore', 'SHORT', '') # Quality score based on date
 fldPQI = Field('pqiScore', 'SHORT', '') # Composite quality score ("Point Quality Index")
@@ -46,11 +46,13 @@ fldGrpUse = Field('grpUse', 'LONG', '') # Identifies highest quality records in 
 
 addFields = [fldSFID, fldEOID, fldRaScore, fldDateScore, fldPQI, fldGrpUse]
 
-def SplitBiotics(inFeats, outGDB, inXwalk = "#", fldOutCode = "#"):
+def SplitBiotics(inFeats, outGDB, inXwalk = "#", fldOutCode = "#", init = True):
    '''Splits a standard input Biotics dataset into multiple datasets based on element codes'''
    
    # Get list of unique values in element code field
    elcodes = unique_values(inFeats, 'ELCODE')
+   
+   srcTab = arcpy.Describe(inFeats).Name
    
    for code in elcodes:
       # Select the records with the element code
@@ -59,10 +61,10 @@ def SplitBiotics(inFeats, outGDB, inXwalk = "#", fldOutCode = "#"):
       
       # generate species code from SNAME
       spCode = unique_values('lyrFeats', 'SNAME')[0]
-      spCode = spCode.replace('(','').replace(')', '') # remove parentheses
+      spCode = spCode.replace('(','').replace(')', '') # remove any parentheses
       spCode = spCode.replace('var. ','').replace('ssp. ','') # remove var. and ssp.
-      spCode = (spCode.lower()).split(" ")[0:3]
-      spCode = ''.join([i[0:4] for i in spCode])
+      spCode = (spCode.lower()).split(" ")[0:3] # take first 3 strings
+      spCode = ''.join([i[0:4] for i in spCode]) # collapse into code
       
       if inXwalk != '#':
          # Convert crosswalk table to GDB table
@@ -77,24 +79,39 @@ def SplitBiotics(inFeats, outGDB, inXwalk = "#", fldOutCode = "#"):
             outFeats = outGDB + os.sep + outName
    
             # Export the selected records to a new feature class using the output code as the name
-            arcpy.CopyFeatures_management('lyrFeats', outFeats)
-            printMsg('Created feature class %s for elcode %s' % (outName, code))
+            if init:
+               AddInitFlds('lyrFeats', outGDB, 'SF_ID', 'OBSDATE', code)
+            else:
+               arcpy.CopyFeatures_management('lyrFeats', outFeats)
+               printMsg('Created feature class %s for elcode %s' % (outName, code))
             
          except:
             # Export the selected records to a new feature class using elcode as the name
             printMsg('Unable to find output codename for elcode %s' % code)
             printMsg('Saving under derived name instead.')
             outFeats = outGDB + os.sep + spCode
-            arcpy.CopyFeatures_management('lyrFeats', outFeats)
+            if init:
+               AddInitFlds('lyrFeats', outGDB, spCode, 'SF_ID', 'OBSDATE', spCode)
+            else:
+               arcpy.CopyFeatures_management('lyrFeats', outFeats)
+               printMsg('Created feature class %s for elcode %s' % (outName, code))
       else:
          outFeats = outGDB + os.sep + spCode
-         arcpy.CopyFeatures_management('lyrFeats', outFeats)
+         if init:
+            AddInitFlds('lyrFeats', outGDB, spCode, 'SF_ID', 'OBSDATE', spCode)
+         else:
+            arcpy.CopyFeatures_management('lyrFeats', outFeats)
+            printMsg('Created feature class %s for elcode %s' % (outName, code))
 
-def AddInitFlds(inPolys, spCode, srcTab, fldID, fldDate, outPolys):
+def AddInitFlds(inPolys, outGDB, spCode, fldID, fldDate, srcTab = '#'):
    '''Adds and populates initial standard data fields need for data review, QC, and editing. '''
    # check if polygon type
    if arcpy.Describe(inPolys).shapeType != 'Polygon':
       raise Exception('Input dataset is not of type Polygon. Convert to polygon and re-run.')
+   if srcTab == '#':
+      srcTab = arcpy.Describe(inPolys).Name
+      srcTab =  srcTab.replace('.shp','')
+   outPolys = outGDB + os.sep + srcTab
    
    # Make a fresh copy of the data
    arcpy.CopyFeatures_management (inPolys, outPolys)
@@ -177,9 +194,9 @@ def AddInitFlds(inPolys, spCode, srcTab, fldID, fldDate, outPolys):
    
    return outPolys
    
-def CullDuplicates(inPolys, fldSrcID, fldDateCalc = 'dateCalc', fldIsDup = 'isDup'):
+def CullDuplicates(inPolys, fldSrcID = 'src_id', fldDateCalc = 'dateCalc', fldIsDup = 'isDup'):
    '''Removes duplicate records where possible; marks records for review.
-   Sets value for 'isDup' field as follows:
+      Sets value for 'isDup' field as follows:
       0 = no duplicates
       1 = duplicates present
       2 = duplicates removed'''
@@ -246,7 +263,7 @@ def CullDuplicates(inPolys, fldSrcID, fldDateCalc = 'dateCalc', fldIsDup = 'isDu
    
    return inPolys
    
-def MergeData(inList, outPolys, spatialRef = "#"):
+def MergeData(inGDB, outPolys, inList = "#", spatialRef = "#"):
    '''Merges multiple input datasets into one consolidated set with standard fields.
    Assumption: Inputs are all in same coordinate system.'''
    # Get spatial reference from first feature class in list.
@@ -255,11 +272,14 @@ def MergeData(inList, outPolys, spatialRef = "#"):
    else: 
       sr = arcpy.Describe(spatialRef).spatialReference
       
+   arcpy.env.workspace = inGDB
+   if inList == "#":
+      inList = arcpy.ListFeatureClasses()
+      
    # Make a new polygon feature class for output
-   basename = os.path.basename(outPolys) + '_temp'
-   dirname = os.path.dirname(outPolys)
-   outPolys_temp = dirname + os.sep + basename
-   arcpy.CreateFeatureclass_management (dirname, basename, 'POLYGON', '', '', '', sr)
+   outPolys_temp = (os.path.basename(outPolys)).replace('.shp','') + '_temp'
+   outPolys_temp2 = (os.path.basename(outPolys)).replace('.shp','') + '_notDissolved'
+   arcpy.CreateFeatureclass_management (inGDB, outPolys_temp, 'POLYGON', '', '', '', sr)
    printMsg('Output feature class initiated.')
    
    # union individual layers
@@ -284,24 +304,149 @@ def MergeData(inList, outPolys, spatialRef = "#"):
    for i in inList:
       inList_u2.append(i + "_u2")
    
+   # set up dissolve list
+   initDissList2 = initDissList
+   if '.shp' in outPolys:
+      initDissList2.extend(['Shape_Area','Shape_Leng'])
+   else: 
+      initDissList2.extend(['Shape_Area','Shape_Length'])
    nums = range(0,len(inList))
    for i in nums:
       nums2 = range(0,len(inList))
       nums2.remove(i)
       ul = [inList_u[x] for x in [i] + nums2]
-      u_all = arcpy.Union_analysis(ul, dirname + os.sep + "union_all")
+      u_all = arcpy.Union_analysis(ul, "union_all")
       fld = 'FID_' + arcpy.Describe(ul[0]).name
       arcpy.Select_analysis(u_all, inList_u2[i], where_clause = fld + " <> -1")
       arcpy.Append_management (inList_u2[i], outPolys_temp, 'NO_TEST')
       # dissolve eliminates polys that are EXACT duplicates, since initDissList includes all fields
-      arcpy.Dissolve_management(outPolys_temp, outPolys, initDissList, "", "SINGLE_PART")
+      arcpy.Dissolve_management(outPolys_temp, outPolys_temp2, initDissList2, "", "SINGLE_PART")
    
    # get rid of all temp files
-   garbagePickup(inList_u + inList_u2 + [outPolys_temp] + [dirname + os.sep + "union_all"])
+   garbagePickup(inList_u + inList_u2 + [outPolys_temp] + ["union_all"])
    printMsg('Data merge complete.')
    
+   try:
+      CullSpatialDuplicates(outPolys_temp2, fldDateCalc = 'dateCalc', fldSFRA = 'SFRACalc', fldUse = 'use', fldUseWhy = 'use_why', fldRaScore = 'raScore')
+   except:
+      arcpy.DeleteField_management('lyrPolys', 'sdc')
+      printMsg('Spatial duplicate identification failed; make sure output file is not being accessed in other programs and try re-running CullSpatialDuplicates.')
+      return
+   
+   try:
+      arcpy.Dissolve_management(outPolys_temp2, outPolys, initDissList, "", "SINGLE_PART")
+   except:
+      printMsg('Final dissolve failed. Need to dissolve on all attributes (except fid/shape/area) to finalize dataset.')
+      return
+   
+   garbagePickup(outPolys_temp2)
    return outPolys
    
+def CullSpatialDuplicates(inPolys, fldDateCalc = 'dateCalc', fldSFRA = 'SFRACalc', fldUse = 'use', fldUseWhy = 'use_why', fldRaScore = 'raScore'):
+   '''Internal function for MergeData. Sets raScore values, and identifies
+   spatial duplicates. It sets fldUse = 1 for the most recent
+   polygon among exact duplicates, and all others to 0. If duplicates
+   have the same date, fldSFRA is used to rank them (higher preferred).'''
+   
+   fldSDC = 'sdc'
+   # Get initial record count
+   arcpy.MakeFeatureLayer_management (inPolys, 'lyrPolys')
+   arcpy.AddField_management('lyrPolys', fldSDC)
+   arcpy.CalculateField_management('lyrPolys', fldSDC, 0, 'PYTHON')
+   
+   # Get list of unique IDs
+   idCol = arcpy.Describe('lyrPolys').fieldInfo.getFieldName(0)
+   idList = unique_values(inPolys, idCol)
+   numID = len(idList)
+   printMsg('There are %s unique polygons.' % str(numID))
+   
+   # set raScore
+   q = "%s = 'Very High'" % fldSFRA
+   arcpy.SelectLayerByAttribute_management('lyrPolys', "NEW_SELECTION", q)
+   arcpy.CalculateField_management('lyrPolys', fldRaScore, 5, 'PYTHON')
+   q = "%s = 'High'" % fldSFRA
+   arcpy.SelectLayerByAttribute_management('lyrPolys', "NEW_SELECTION", q)
+   arcpy.CalculateField_management('lyrPolys', fldRaScore, 4, 'PYTHON')
+   q = "%s = 'Medium'" % fldSFRA
+   arcpy.SelectLayerByAttribute_management('lyrPolys', "NEW_SELECTION", q)
+   arcpy.CalculateField_management('lyrPolys', fldRaScore, 3, 'PYTHON')
+   q = "%s = 'Low'" % fldSFRA
+   arcpy.SelectLayerByAttribute_management('lyrPolys', "NEW_SELECTION", q)
+   arcpy.CalculateField_management('lyrPolys', fldRaScore, 2, 'PYTHON')
+   q = "%s = 'Very Low'" % fldSFRA
+   arcpy.SelectLayerByAttribute_management('lyrPolys', "NEW_SELECTION", q)
+   arcpy.CalculateField_management('lyrPolys', fldRaScore, 1, 'PYTHON')
+   q = "%s IS NULL" % fldRaScore
+   arcpy.SelectLayerByAttribute_management('lyrPolys', "NEW_SELECTION", q)
+   arcpy.CalculateField_management('lyrPolys', fldRaScore, 0, 'PYTHON')
+   
+   print 'Your field name is %s' % fldUse
+   
+   where_clause = "%s = 0" % fldSDC
+   arcpy.SelectLayerByAttribute_management('lyrPolys', "NEW_SELECTION", where_clause)
+   numPolys = countFeatures('lyrPolys')
+   
+   printMsg('Identifying spatial duplicates...')
+   while numPolys > 0:
+      id = min(unique_values('lyrPolys',idCol))
+      # printMsg('Working on ID %s' %id)
+      
+      # Select the next un-assigned record
+      where_clause1 = "%s = %s" % (idCol, id)
+      arcpy.SelectLayerByAttribute_management('lyrPolys', "NEW_SELECTION", where_clause1)
+      arcpy.SelectLayerByLocation_management('lyrPolys', "ARE_IDENTICAL_TO", 'lyrPolys', selection_type =  "ADD_TO_SELECTION")
+      arcpy.CalculateField_management('lyrPolys', fldSDC, 1, 'PYTHON') # has been checked; set to 1
+      
+      # Count the records
+      numPolys = countFeatures('lyrPolys')
+      
+      if numPolys == 1:
+         # set isDup to 0
+         arcpy.CalculateField_management ('lyrPolys', fldUse, 1, 'PYTHON')
+      else:
+         # set all selected to 0 to start
+         arcpy.CalculateField_management ('lyrPolys', fldUse, 0, 'PYTHON')
+         arcpy.CalculateField_management ('lyrPolys', fldUseWhy, '"spatial duplicate"' , 'PYTHON')
+         
+         # Find the maximum standard date value
+         dateList = unique_values('lyrPolys', fldDateCalc)
+         maxDate = max(dateList)
+      
+         # Unselect any records where the date is less than the maximum
+         where_clause2 = "%s < '%s'" % (fldDateCalc, maxDate)
+         arcpy.SelectLayerByAttribute_management('lyrPolys',"REMOVE_FROM_SELECTION", where_clause2)
+         
+         # Find the maximum RA value
+         raList = unique_values('lyrPolys', 'raScore')
+         maxRa = max(raList)
+         
+         # Unselect any records where the RA is less than the maximum
+         where_clause2 = "raScore < %s" % (maxRa)
+         arcpy.SelectLayerByAttribute_management('lyrPolys',"REMOVE_FROM_SELECTION", where_clause2)
+         
+         # Count the remaining records, assign 1 to lowest ID number
+         numPolys = countFeatures('lyrPolys')
+         if numPolys == 1:
+            arcpy.CalculateField_management ('lyrPolys', fldUse, 1, 'PYTHON')
+         else:
+            idList = unique_values('lyrPolys', idCol)
+            minID = min(idList)
+            where_clause2 = "%s <> %s" % (idCol, minID)
+            arcpy.SelectLayerByAttribute_management('lyrPolys',"REMOVE_FROM_SELECTION", where_clause2)
+            arcpy.CalculateField_management ('lyrPolys', fldUse, 1, 'PYTHON')
+         arcpy.CalculateField_management ('lyrPolys', fldUseWhy, '""', "PYTHON")
+      
+      # select remaining unassigned polys
+      where_clause = "%s = 0" % fldSDC
+      arcpy.SelectLayerByAttribute_management('lyrPolys', "NEW_SELECTION", where_clause)
+      numPolys = countFeatures('lyrPolys')
+
+   # Get final record count
+   numPolysFinal = countFeatures(inPolys)
+   arcpy.SelectLayerByAttribute_management('lyrPolys',"CLEAR_SELECTION")
+   arcpy.DeleteField_management('lyrPolys', fldSDC)
+   
+   return inPolys
    
 ############################################################################
 ###################### USER INPUT SECTION BEGINS HERE ######################
@@ -315,14 +460,15 @@ def MergeData(inList, outPolys, spatialRef = "#"):
 #        - inXwalk: the input crosswalk file (must be an Excel file)
 #        - fldOutCode: the field in the crosswalk table containing the output code to use for feature class names (should not contain any spaces or weird characters)
 #        - outGDB: geodatabase to contain the output feature classes 
+#        - init: Flag indicating whether to automatically run AddInitFlds on split feature classes
 
-#     - AddInitFlds(inPolys, spCode, srcTab, fldID, fldDate, outPolys)
+#     - AddInitFlds(inPolys, spCode, fldID, fldDate, outPolys, srcTab)
 #        - inPolys: the input polygon feature class you want to pre-process
+#        - outGDB: the output geodatabase (must already exist)
 #        - spCode: the 8-character species code
-#        - srcTab: the data source table code
 #        - fldID: the field containing the record ID you want to use to identify duplicates
 #        - fldDate: the field containing the observation dates
-#        - outPolys: the output feature class
+#        - srcTab: the data source table code (recommended to leave "#", which uses the file name)
 
 #     - CullDuplicates(inPolys, fldSrcID = 'src_id', fldDateCalc = 'dateCalc', fldIsDup = 'isDup')
 #        - inPolys: the input feature class (typically outPolys from the previous function)
