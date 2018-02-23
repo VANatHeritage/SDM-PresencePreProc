@@ -27,7 +27,9 @@ def garbagePickup(trashList):
    for t in trashList:
       try:
          arcpy.Delete_management(t)
+         printMsg('File "' + str(t) + '" deleted.')
       except:
+         printMsg('Could not delete file "' + str(t) + '".')
          pass
    return      
       
