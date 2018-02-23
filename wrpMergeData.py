@@ -31,8 +31,8 @@ outPolys = r'C:\David\scratch\sdmPresencePreProc_testing\isotmede\isotmede.gdb\i
 # The list of feature classes to merge. These must be contained within brackets, separated by commas.
 # It is okay to have just one feature class in the list, but it must be in brackets.
 # You can leave it as default ("#"), and all feature classes from inGDB will be merged.
-# inList = "#"
-inList = ['SWP_buff','ISOMEDdiversity_buff','isotmede']
+inList = "#"
+# inList = ['SWP_buff','ISOMEDdiversity_buff','isotmede']
 
 # A feature class with the template projection for the merged dataset
 spatialRef = r'C:\David\scratch\sdmPresencePreProc_testing\isotmede\isotmede.gdb\SWP_buff'

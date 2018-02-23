@@ -305,7 +305,7 @@ def MergeData(inGDB, outPolys, inList = "#", spatialRef = "#"):
       inList_u2.append(i + "_u2")
    
    # set up dissolve list
-   initDissList2 = initDissList
+   initDissList2 = list(initDissList)
    if '.shp' in outPolys:
       initDissList2.extend(['Shape_Area','Shape_Leng'])
    else: 
@@ -330,16 +330,16 @@ def MergeData(inGDB, outPolys, inList = "#", spatialRef = "#"):
       CullSpatialDuplicates(outPolys_temp2, fldDateCalc = 'dateCalc', fldSFRA = 'SFRACalc', fldUse = 'use', fldUseWhy = 'use_why', fldRaScore = 'raScore')
    except:
       arcpy.DeleteField_management('lyrPolys', 'sdc')
-      printMsg('Spatial duplicate identification failed; make sure output file is not being accessed in other programs and try re-running CullSpatialDuplicates.')
+      printMsg('Spatial duplicate identification failed; make sure output file is not being accessed in other programs and try re-running CullSpatialDuplicates on: ' + str(outPolys_temp2))
       return
    
    try:
       arcpy.Dissolve_management(outPolys_temp2, outPolys, initDissList, "", "SINGLE_PART")
    except:
-      printMsg('Final dissolve failed. Need to dissolve on all attributes (except fid/shape/area) to finalize dataset.')
+      printMsg('Final dissolve failed. Need to dissolve on all attributes (except fid/shape/area) to finalize dataset: ' + str(outPolys_temp2))
       return
    
-   garbagePickup(outPolys_temp2)
+   garbagePickup([outPolys_temp2])
    return outPolys
    
 def CullSpatialDuplicates(inPolys, fldDateCalc = 'dateCalc', fldSFRA = 'SFRACalc', fldUse = 'use', fldUseWhy = 'use_why', fldRaScore = 'raScore'):
@@ -380,7 +380,7 @@ def CullSpatialDuplicates(inPolys, fldDateCalc = 'dateCalc', fldSFRA = 'SFRACalc
    arcpy.SelectLayerByAttribute_management('lyrPolys', "NEW_SELECTION", q)
    arcpy.CalculateField_management('lyrPolys', fldRaScore, 0, 'PYTHON')
    
-   print 'Your field name is %s' % fldUse
+   print 'Updating %s column...' % fldUse
    
    where_clause = "%s = 0" % fldSDC
    arcpy.SelectLayerByAttribute_management('lyrPolys', "NEW_SELECTION", where_clause)

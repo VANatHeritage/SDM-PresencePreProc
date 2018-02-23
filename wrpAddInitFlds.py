@@ -20,7 +20,7 @@ from sdmPresencePreProc import *
 ############################################################################
 
 # The input polygon feature class you want to pre-process
-inPolys = r'C:\David\scratch\sdmPresencePreProc_testing\isotmede\SWP_buff.shp'  # replace with your data path
+inPolys = r'C:\David\scratch\sdmPresencePreProc_testing\isotmede\isotmede.shp'  # replace with your data path
 
 # The output geodatabase (file will have same name as original unless srcTab is set)
 outGDB = r'C:\David\scratch\sdmPresencePreProc_testing\isotmede\isotmede.gdb'  
