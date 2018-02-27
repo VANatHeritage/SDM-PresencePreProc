@@ -32,9 +32,10 @@ outPolys = r'C:\David\scratch\sdmPresencePreProc_testing\trifcalc\trifcalc.gdb\t
 # It is okay to have just one feature class in the list, but it must be in brackets.
 # You can leave it as default ("#"), and all feature classes from inGDB will be merged.
 inList = "#"
-# inList = ['SWP_buff','ISOMEDdiversity_buff','trifcalc']
+# inList = ['SWP_buff','ISOMEDdiversity_buff']
 
 # A feature class with the template projection for the merged dataset
+# You can leave it as default ("#"), and the projection of the first file in inList will be used.
 spatialRef = "#"
 #spatialRef = r'C:\David\scratch\sdmPresencePreProc_testing\trifcalc\trifcalc.gdb\SWP_buff'
 

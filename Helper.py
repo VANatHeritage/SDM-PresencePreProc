@@ -201,6 +201,25 @@ def unique_values(table, field):
    with arcpy.da.SearchCursor(table, [field]) as cursor:
       return sorted({row[0] for row in cursor})
 
+def make_gdb(path):
+   ''' Creates a geodatabase if it doesn't exist'''
+   path = path.replace("\\", "/")
+   if '.gdb' not in path:
+      printMsg("Bad geodatabase path name.")
+      return False
+   folder = path[0:path.rindex("/")]
+   name = path[(path.rindex("/")+1):len(path)]
+   if not os.path.exists(path):
+      try:
+         arcpy.CreateFileGDB_management(folder, name)
+      except:
+         return False
+      else:
+         printMsg("Geodatabase '" + path + "' created.")
+         return True
+   else:
+      return True
+
 ##################################################################################################################
 # Use the main function below to run a function directly from Python IDE or command line with hard-coded variables
 

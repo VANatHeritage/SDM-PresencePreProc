@@ -20,7 +20,7 @@ inFeats = r'C:\David\scratch\sdmPresencePreProc_testing\biotics\biotics_SF_orig.
 
 # The file geodatabase to contain the output feature classes
 # You must have already created this.
-outGDB = r'C:\David\scratch\sdmPresencePreProc_testing\biotics\split3.gdb'  
+outGDB = r'C:\David\scratch\sdmPresencePreProc_testing\biotics\split4.gdb'  
 
 # The input crosswalk file (must be an Excel file)
 # Leave this as '#' to derive names from the SNAME of the species

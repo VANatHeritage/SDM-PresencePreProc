@@ -54,6 +54,8 @@ def SplitBiotics(inFeats, outGDB, inXwalk = "#", fldOutCode = "#", init = True):
    elcodes = unique_values(inFeats, 'ELCODE')
    
    srcTab = arcpy.Describe(inFeats).Name
+   if not make_gdb(outGDB):
+      return
    
    for code in elcodes:
       # Select the records with the element code
@@ -107,6 +109,8 @@ def SplitBiotics(inFeats, outGDB, inXwalk = "#", fldOutCode = "#", init = True):
 def AddInitFlds(inPolys, outGDB, spCode, fldDate, fldID = "#", srcTab = '#'):
    '''Adds and populates initial standard data fields need for data review, QC, and editing. '''
    # check if polygon type
+   if not make_gdb(outGDB):
+      return
    if arcpy.Describe(inPolys).shapeType != 'Polygon':
       raise Exception('Input dataset is not of type Polygon. Convert to polygon and re-run.')
    if srcTab == '#':

@@ -22,7 +22,7 @@ from sdmPresencePreProc import *
 # The input polygon feature class you want to pre-process
 inPolys = r'C:\David\scratch\sdmPresencePreProc_testing\trifcalc\Trifolium_calcaricum_PFsNotedited.shp'  # replace with your data path
 
-# The output geodatabase (file will have same name as original unless srcTab is set)
+# The output geodatabase (will be created if doesn't exist)
 outGDB = r'C:\David\scratch\sdmPresencePreProc_testing\trifcalc\trifcalc.gdb'  
 
 # The 8-12 character species code to be used for modeling (make sure to use the same as exported from any Biotics dataset)
@@ -32,7 +32,7 @@ spCode = 'trifcalc' # or some other species code
 fldDate = 'OBSDATE' # or some other field name
 
 # The field (in inPolys) containing the record ID you want to use to identify duplicates (recommended to use an integer field that indentifies unique features)
-fldID = 'SF_ID' # Will use ArcGIS objectid (database) or FID (shapefile)
+fldID = '#' # Leave as "#" to use ArcGIS objectid (database) or FID (shapefile)
 
 # The code for the data source table
 srcTab = '#' # Leave as '#' and it will use the name of the input feature class
