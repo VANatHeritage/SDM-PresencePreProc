@@ -47,7 +47,7 @@ addFields = [fldSFID, fldEOID, fldRaScore, fldDateScore, fldPQI, fldGrpUse]
 # list of all fields for dissolving in MergeData
 initDissList = ['sp_code','src_table','src_id','use','use_why','dateCalc','dateFlag','SFRACalc','needEdit','isDup','rev','revComments','SF_ID','EO_ID','raScore','dateScore','pqiScore','grpUse']
 
-def SplitBiotics(inFeats, outGDB, inXwalk = "#", fldOutCode = "#", init = True):
+def SplitBiotics(inFeats, outGDB, init = True, inXwalk = "#", fldOutCode = "#"):
    '''Splits a standard input Biotics dataset into multiple datasets based on element codes'''
    
    # Get list of unique values in element code field
@@ -83,7 +83,7 @@ def SplitBiotics(inFeats, outGDB, inXwalk = "#", fldOutCode = "#", init = True):
    
             # Export the selected records to a new feature class using the output code as the name
             if init:
-               AddInitFlds('lyrFeats', outGDB, 'SF_ID', 'OBSDATE', code)
+               AddInitFlds('lyrFeats', outGDB, outName, 'OBSDATE', 'SFRA', 'SF_ID', outName)
             else:
                arcpy.CopyFeatures_management('lyrFeats', outFeats)
                printMsg('Created feature class %s for elcode %s' % (outName, code))
@@ -94,19 +94,19 @@ def SplitBiotics(inFeats, outGDB, inXwalk = "#", fldOutCode = "#", init = True):
             printMsg('Saving under derived name instead.')
             outFeats = outGDB + os.sep + spCode
             if init:
-               AddInitFlds('lyrFeats', outGDB, spCode, 'SF_ID', 'OBSDATE', spCode)
+               AddInitFlds('lyrFeats', outGDB, spCode, 'OBSDATE', 'SFRA', 'SF_ID',  spCode)
             else:
                arcpy.CopyFeatures_management('lyrFeats', outFeats)
                printMsg('Created feature class %s for elcode %s' % (outName, code))
       else:
          outFeats = outGDB + os.sep + spCode
          if init:
-            AddInitFlds('lyrFeats', outGDB, spCode, 'SF_ID', 'OBSDATE', spCode)
+            AddInitFlds('lyrFeats', outGDB, spCode, 'OBSDATE', 'SFRA', 'SF_ID',  spCode)
          else:
             arcpy.CopyFeatures_management('lyrFeats', outFeats)
             printMsg('Created feature class %s for elcode %s' % (outName, code))
 
-def AddInitFlds(inPolys, outGDB, spCode, fldDate, fldID = "#", srcTab = '#'):
+def AddInitFlds(inPolys, outGDB, spCode, fldDate, fldSFRA = "#", fldID = "#", srcTab = '#'):
    '''Adds and populates initial standard data fields need for data review, QC, and editing. '''
    # check if polygon type
    if not make_gdb(outGDB):
@@ -150,6 +150,11 @@ def AddInitFlds(inPolys, outGDB, spCode, fldDate, fldID = "#", srcTab = '#'):
    expression = "'%s-' + '!%s!'" % (srcTab, fldID)
    arcpy.CalculateField_management (outPolys, fldSrcID.Name, expression, 'PYTHON')
    printMsg('Unique ID field populated.')
+   
+   if fldSFRA != "#":
+      expression = "!%s!" % fldSFRA
+      arcpy.CalculateField_management (outPolys, fldRA.Name, expression, 'PYTHON')
+      printMsg('%s field set to "%s".' % (fldRA.Name, fldSFRA))
    
    # Date
    codeblock = """def getStdDate(Date):
@@ -202,6 +207,14 @@ def AddInitFlds(inPolys, outGDB, spCode, fldDate, fldID = "#", srcTab = '#'):
    expression = 'flagDate(!%s!)' % fldDateCalc.Name
    arcpy.CalculateField_management (outPolys, fldDateFlag.Name, expression, 'PYTHON', codeblock)
    printMsg('Date flag field populated.')
+   
+   arcpy.MakeFeatureLayer_management (outPolys, 'outPolys')
+   q = "%s NOT IN ('Very High','High','Medium','Low','Very Low')" % fldRA.Name
+   arcpy.SelectLayerByAttribute_management('outPolys','NEW_SELECTION', q)
+   arcpy.CalculateField_management ('outPolys', fldNeedEdit.Name, 1, "PYTHON")
+   if (int(arcpy.GetCount_management('outPolys')[0]) > 0):
+      printMsg("Some RA values are not in the allowed value list and were marked with '%s' = 1. Make sure to edit '%s' column for these rows." % (fldNeedEdit.Name, fldRA.Name))
+   arcpy.SelectLayerByAttribute_management('outPolys', 'CLEAR_SELECTION')
    
    return outPolys
    
@@ -472,7 +485,8 @@ def MarkSpatialDuplicates(inPolys, fldDateCalc = 'dateCalc', fldSFRA = 'SFRACalc
    arcpy.DeleteField_management('lyrPolys', fldSDC)
    
    return inPolys
-   
+
+
 ############################################################################
 ###################### USER INPUT SECTION BEGINS HERE ######################
 ############################################################################
@@ -482,18 +496,19 @@ def MarkSpatialDuplicates(inPolys, fldDateCalc = 'dateCalc', fldSFRA = 'SFRACalc
 # - Available functions:
 #     - SplitBiotics(inFeats, inXwalk, fldOutCode, outGDB)
 #        - inFeats: the input feature class you want to split
-#        - inXwalk: the input crosswalk file (must be an Excel file)
-#        - fldOutCode: the field in the crosswalk table containing the output code to use for feature class names (should not contain any spaces or weird characters)
 #        - outGDB: geodatabase to contain the output feature classes 
 #        - init: Flag indicating whether to automatically run AddInitFlds on split feature classes
+#        - inXwalk: the input crosswalk file (must be an Excel file) - leave "#" to auto-calculated codes based on Biotics scientific name field
+#        - fldOutCode: the field in the crosswalk table containing the output code to use for feature class names (should not contain any spaces or weird characters)
 
-#     - AddInitFlds(inPolys, spCode, fldID, fldDate, outPolys, srcTab)
+#     - AddInitFlds(inPolys, outGDB, spCode, fldDate, fldSFRA, fldID, srcTab)
 #        - inPolys: the input polygon feature class you want to pre-process
-#        - outGDB: the output geodatabase (must already exist)
-#        - spCode: the 8-character species code
+#        - outGDB: the output geodatabase
+#        - spCode: the unique species code (8-12 characters)
 #        - fldDate: the field containing the observation dates
-#        - fldID: the field containing the record ID you want to use to identify duplicates (if left "#", the file ID will be used)
-#        - srcTab: the data source table code (recommended to leave "#", which uses the file name)
+#        - fldSFRA: the field containing the RA values (leave "#" if there isn't one)
+#        - fldID: the field containing the record ID (recommended to leave "#", the file unique ID will be used)
+#        - srcTab: the data source table code (recommended to leave "#", which uses the original file name)
 
 #     - CullDuplicates(inPolys, fldSrcID = 'src_id', fldDateCalc = 'dateCalc', fldIsDup = 'isDup')
 #        - inPolys: the input feature class (typically outPolys from the previous function)
@@ -501,15 +516,16 @@ def MarkSpatialDuplicates(inPolys, fldDateCalc = 'dateCalc', fldSFRA = 'SFRACalc
 #        - fldDateCalc: field with standardized date (leave blank; it will use 'dateCalc')
 #        - fldIsDup: field identifying duplicates (leave blank; it will use 'isDup')
 
-#     - MergeData(inList, outPolys)
-#        - inList: the list of datasets to merge
+#     - MergeData(inGDB, outPolys, inList, spatialRef)
+#        - inGDB: The geodatabase containing the input dataset(s)
 #        - outPolys: the output merged polygon feature class
-#        - spatialRef: a feature class with the template projection. If not specified, the projection from the first in the list will be used.
+#        - inList: the list of datasets to merge. Leave "#" to merge all feature classes found in inGDB
+#        - spatialRef: a feature class with the template projection. If left "#", the projection from the first in the list will be used.
 
 
 ### RECOMMENDED WORKFLOW
 # First, split the master, multiple-species feature class from Biotics into multiple, single-species feature classes using the "SplitBiotics" function. Then, for each species:
-# 1. Run the "AddInitFields" function on the species' Biotics dataset
+# 1. Run the "AddInitFlds" function on the species' Biotics dataset
 # 2. Run the "CullDuplicates" function on the output from step 1
 # 3. Inspect the output. Fix dates as needed, wherever the dateCalc field is '0000-00-00'. 
       # You can change the dateCalc field to '0000-00-01' if the date cannot be determined and it is a duplicate record that should be culled.
@@ -522,7 +538,6 @@ def MarkSpatialDuplicates(inPolys, fldDateCalc = 'dateCalc', fldSFRA = 'SFRACalc
 # 8. Run the "SpatialCluster" function to assign features to groups based on proximity.
 # 9. Review and edit the output as needed.
       
-
 
 # Use the section below to enable a function (or sequence of functions) to be run directly from this free-standing script (i.e., not as an ArcGIS toolbox tool)
 

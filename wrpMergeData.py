@@ -23,10 +23,10 @@ from sdmPresencePreProc import *
 
 # Input data
 # Working geodatabase, and optionally where to get input data from. Default (if inList is '#') is to take all feature classes from here and merge them.
-inGDB = r'C:\David\scratch\sdmPresencePreProc_testing\trifcalc\trifcalc.gdb'
+inGDB = r'C:\David\scratch\trifcalc.gdb'
 
 # The output merged feature class
-outPolys = r'C:\David\scratch\sdmPresencePreProc_testing\trifcalc\trifcalc.gdb\trifcalc_merged' # replace with your data path
+outPolys = r'C:\David\scratch\trifcalc.gdb\trifcalc_merged' # replace with your data path
 
 # The list of feature classes to merge. These must be contained within brackets, separated by commas.
 # It is okay to have just one feature class in the list, but it must be in brackets.
