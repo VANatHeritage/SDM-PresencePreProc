@@ -224,7 +224,7 @@ def make_gdb_name(string):
    return nm
 
 # used in MergeData
-def MarkSpatialDuplicates(inPolys, fldDateCalc = 'dateCalc', fldSFRA = 'SFRACalc', fldUse = 'use', fldUseWhy = 'use_why', fldRaScore = 'raScore'):
+def MarkSpatialDuplicates(inPolys, fldDateCalc = 'sdm_date', fldSFRA = 'tempSFRACalc', fldUse = 'sdm_use', fldUseWhy = 'sdm_use_why', fldRaScore = 'sdm_ra'):
    '''Internal function for MergeData. Sets raScore values, and identifies
    spatial duplicates. It sets fldUse = 1 for the most recent
    polygon among exact duplicates, and all others to 0. If duplicates
@@ -305,11 +305,11 @@ def MarkSpatialDuplicates(inPolys, fldDateCalc = 'dateCalc', fldSFRA = 'SFRACalc
          arcpy.CalculateField_management('lyrPolys', fldUseWhy, '"spatial duplicate"' , 'PYTHON')
          
          # Find the maximum RA value
-         raList = unique_values('lyrPolys', 'raScore')
+         raList = unique_values('lyrPolys', fldRaScore)
          maxRa = max(raList)
          
          # Unselect any records where the RA is less than the maximum
-         where_clause2 = "raScore < %s" % (maxRa)
+         where_clause2 = "%s < %s" % (fldRaScore, maxRa)
          arcpy.SelectLayerByAttribute_management('lyrPolys',"REMOVE_FROM_SELECTION", where_clause2)
          
          # Find the maximum standard date value
@@ -354,30 +354,35 @@ class Field:
 # Initial fields for editing
 fldSpCode = Field('sp_code', 'TEXT', 12) # Code to identify species. Example: 'clemaddi'. If subspecies, use 12 letter code
 fldSrcTab = Field('src_table', 'TEXT', 50) # Code to identify source dataset. Example: 'biotics'
-fldSrcID = Field('src_id', 'TEXT', 60) # Unique ID identifying source table and observation
-fldSFID = Field('SF_ID', 'LONG', '') # Source feature ID (Biotics data only)
-fldEOID = Field('EO_ID', 'LONG', '') # Element occurrence ID (interpreted for non-Biotics data)
-fldUse = Field('use', 'SHORT', '') # Binary: Eligible for use in model training (1) or not (0)
-fldUseWhy = Field('use_why', 'TEXT', 50) # Comments on eligibility for use
-fldDateCalc = Field('dateCalc', 'TEXT', 10) # Date in standardized yyyy-mm-dd format
-fldDateFlag = Field('dateFlag', 'SHORT', '') # Flag uncertain year. 0 = certain; 1 = uncertain
-fldRA = Field('SFRACalc', 'TEXT', 25) # Source feature representation accuracy
-fldNeedEdit = Field('needEdit', 'SHORT', '') # Flag for editing. 0 = okay; 1 = needs edits; 2 = edits done
-fldIsDup = Field('isDup', 'SHORT', '') # Flag to identify duplicate records based on src_id field. 0 = no duplicates; 1 = duplicates present; 2 = duplicates have been removed
-fldRev = Field('rev', 'SHORT', '') # Flag for review. 0 = okay; 1 = needs review; 2 = review done
-fldComments = Field('revComments', 'TEXT', 250) # Field for review/editing comments
+fldSFID = Field('src_featid', 'LONG', '') # original feature ID (Source feature ID in Biotics)
+fldEOID = Field('src_grpid', 'LONG', '') # original group ID (EO ID in biotics)
+fldSrcID = Field('src_fullid', 'TEXT', 60) # Unique ID identifying source table and observation
+fldFeatID = Field('sdm_featid', 'LONG', '') # new unique id by polygon
+fldGrpID = Field('sdm_grpid', 'LONG', '') # new unique id by group
+fldUse = Field('sdm_use', 'SHORT', '') # Binary: Eligible for use in model training (1) or not (0)
+fldUseWhy = Field('sdm_use_why', 'TEXT', 50) # Comments on eligibility for use
+fldDateCalc = Field('sdm_date', 'TEXT', 10) # Date in standardized yyyy-mm-dd format
+fldDateFlag = Field('sdm_date_flag', 'SHORT', '') # Flag uncertain year. 0 = certain; 1 = uncertain
+fldRA = Field('sdm_ra', 'SHORT', '') # Source feature representation accuracy
+fldRAFlag = Field('sdm_ra_flag', 'SHORT', '') # Flag for editing. 0 = okay; 1 = needs edits; 2 = edits done
+fldSFRACalc = Field('tempSFRACalc', 'TEXT', 20) # for storing original RA column values
+# fldIsDup = Field('isDup', 'SHORT', '') # Flag to identify duplicate records based on src_id field. 0 = no duplicates; 1 = duplicates present; 2 = duplicates have been removed
+# fldRev = Field('rev', 'SHORT', '') # Flag for review. 0 = okay; 1 = needs review; 2 = review done
+# fldComments = Field('revComments', 'TEXT', 250) # Field for review/editing comments
 
-initFields = [fldSpCode, fldSrcTab, fldSrcID, fldUse, fldUseWhy, fldDateCalc, fldDateFlag, fldRA, fldNeedEdit, fldIsDup, fldRev, fldComments, fldSFID, fldEOID]
+initFields = [fldSpCode, fldSrcTab, fldSFID, fldEOID, fldSrcID, fldFeatID, fldGrpID, fldUse, fldUseWhy, fldDateCalc, fldDateFlag, fldRA, fldRAFlag, fldSFRACalc] 
+# fldIsDup, fldRev, fldComments
 
 # Additional fields for automation
-fldRaScore = Field('raScore', 'SHORT', '') # Quality score based on Representation Accuracy
-fldDateScore = Field('dateScore', 'SHORT', '') # Quality score based on date
-fldPQI = Field('pqiScore', 'SHORT', '') # Composite quality score ("Point Quality Index")
-fldGrpUse = Field('grpUse', 'LONG', '') # Identifies highest quality records in group (1) versus all other records (0)
+#fldRaScore = Field('raScore', 'SHORT', '') # Quality score based on Representation Accuracy
+#fldDateScore = Field('dateScore', 'SHORT', '') # Quality score based on date
+#fldPQI = Field('pqiScore', 'SHORT', '') # Composite quality score ("Point Quality Index")
+#fldGrpUse = Field('grpUse', 'LONG', '') # Identifies highest quality records in group (1) versus all other records (0)
+# addFields = [fldRaScore, fldDateScore, fldPQI, fldGrpUse]
+# not using this
 
-addFields = [fldRaScore, fldDateScore, fldPQI, fldGrpUse]
 # list of all fields for dissolving in MergeData
-initDissList = ['sp_code','src_table','src_id','use','use_why','dateCalc','dateFlag','SFRACalc','needEdit','isDup','rev','revComments','SF_ID','EO_ID','raScore','dateScore','pqiScore','grpUse']
+initDissList = ['sp_code','src_table','src_featid','src_grpid','src_fullid','sdm_featid','sdm_grpid','sdm_use','sdm_use_why','sdm_date','sdm_date_flag','sdm_ra','sdm_ra_flag','tempSFRACalc']
 ### header field data
 
 class Toolbox(object):
@@ -437,14 +442,14 @@ class AddInitFlds(object):
             direction = "Input")
       
       fldEO = arcpy.Parameter(
-            displayName = "EO ID column",
+            displayName = "Group (EO ID) column",
             name = "fldEO",
             datatype = "GPString",
             parameterType = "Required",
             direction = "Input")
       
       fldSF = arcpy.Parameter(
-            displayName = "SF ID column",
+            displayName = "Feature (SF ID) column",
             name = "fldSF",
             datatype = "GPString",
             parameterType = "Required",
@@ -519,7 +524,7 @@ class AddInitFlds(object):
       
       params[7].value = outPolys
       
-      # Unique ID
+      # Unique ID (OBJECT/FID)
       arcpy.AddField_management(inPolys, 'orfid', 'LONG','')
       fldID = str(arcpy.Describe(inPolys).Fields[0].Name)
       arcpy.CalculateField_management(inPolys, 'orfid', '!' + fldID + '!', 'PYTHON')
@@ -547,6 +552,7 @@ class AddInitFlds(object):
       arcpy.CalculateField_management (outPolys, fldSpCode.Name, expression, 'PYTHON')
       printMsg('Species code field set to "%s".' % spCode)
       
+      # table id (source table + object/fid)
       expression = "'%s-' + '!%s!'" % (srcTab, fldID)
       arcpy.CalculateField_management (outPolys, fldSrcID.Name, expression, 'PYTHON')
       printMsg('Unique ID field populated.')
@@ -563,8 +569,8 @@ class AddInitFlds(object):
       
       if fldSFRA != "#":
          expression = "!%s!" % fldSFRA
-         arcpy.CalculateField_management (outPolys, fldRA.Name, expression, 'PYTHON')
-         printMsg('%s field set to "%s".' % (fldRA.Name, fldSFRA))
+         arcpy.CalculateField_management (outPolys, fldSFRACalc.Name, expression, 'PYTHON')
+         printMsg('%s field set to "%s".' % (fldSFRACalc.Name, fldSFRA))
       
       # Date
       codeblock = """def getStdDate(Date):
@@ -619,11 +625,11 @@ class AddInitFlds(object):
       printMsg('Date flag field populated.')
       
       arcpy.MakeFeatureLayer_management (outPolys, 'outPolys')
-      q = "%s NOT IN ('Very High','High','Medium','Low','Very Low')" % fldRA.Name
+      q = "%s NOT IN ('Very High','High','Medium','Low','Very Low')" % fldSFRACalc.Name
       arcpy.SelectLayerByAttribute_management('outPolys','NEW_SELECTION', q)
-      arcpy.CalculateField_management ('outPolys', fldNeedEdit.Name, 1, "PYTHON")
+      arcpy.CalculateField_management ('outPolys', fldRAFlag.Name, 1, "PYTHON")
       if (int(arcpy.GetCount_management('outPolys')[0]) > 0):
-         printMsg("Some RA values are not in the allowed value list and were marked with '%s' = 1. Make sure to edit '%s' column for these rows." % (fldNeedEdit.Name, fldRA.Name))
+         printMsg("Some RA values are not in the allowed value list and were marked with '%s' = 1. Make sure to edit '%s' column for these rows." % (fldRAFlag.Name, fldSFRACalc.Name))
       arcpy.SelectLayerByAttribute_management('outPolys', 'CLEAR_SELECTION')
       
       return outPolys
@@ -743,8 +749,8 @@ class MergeData(object):
       printMsg('Adding fields...')
       for f in initFields:
          arcpy.AddField_management (outPolys_temp, f.Name, f.Type, '', '', f.Length)
-      for f in addFields:
-         arcpy.AddField_management (outPolys_temp, f.Name, f.Type, '', '', f.Length)
+      #for f in addFields:
+      #   arcpy.AddField_management (outPolys_temp, f.Name, f.Type, '', '', f.Length)
       
       # Append the dataset to the output
       # union individual layers with respect to all layers
@@ -765,7 +771,7 @@ class MergeData(object):
          ul = [inList_u[x] for x in [i] + nums2]
          u_all = arcpy.Union_analysis(ul, "union_all")
          fld = 'FID_' + arcpy.Describe(ul[0]).name
-         arcpy.Select_analysis(u_all, inList_u2[i], where_clause = fld + " <> -1")
+         arcpy.Select_analysis(u_all, inList_u2[i], where_clause = fld + " <> -1 and " + fldUse.Name + " <> 0")
          arcpy.Append_management (inList_u2[i], outPolys_temp, 'NO_TEST')
          # dissolve eliminates polys that are EXACT duplicates, since initDissList includes all fields
          arcpy.Dissolve_management(outPolys_temp, outPolys_temp2, initDissList2, "", "SINGLE_PART")
@@ -775,11 +781,12 @@ class MergeData(object):
       printMsg('Data merge complete.')
       
       # identify spatial duplicates (internal function)
-      MarkSpatialDuplicates(outPolys_temp2, fldDateCalc = 'dateCalc', fldSFRA = 'SFRACalc', fldUse = 'use', fldUseWhy = 'use_why', fldRaScore = 'raScore')
+      MarkSpatialDuplicates(outPolys_temp2, fldDateCalc = 'sdm_date', fldSFRA = 'tempSFRACalc', fldUse = 'sdm_use', fldUseWhy = 'sdm_use_why', fldRaScore = 'sdm_ra')
       
       # final dissolve
       try:
          arcpy.Dissolve_management(outPolys_temp2, outPolys, initDissList, "", "SINGLE_PART")
+         arcpy.DeleteField_management(outPolys, fldSFRACalc.Name)
       except:
          printMsg('Final dissolve failed. Need to dissolve on all attributes (except fid/shape/area) to finalize dataset: ' + str(outPolys_temp2))
          return

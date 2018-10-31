@@ -2,7 +2,7 @@
 
 Author: David Bucklin
 
-Last updated: 2008-05-15
+Last updated: 2008-10-31
 
 ## To add the toolbox to ArcMap:
 
@@ -22,7 +22,7 @@ Last updated: 2008-05-15
 - If source is:
   -  **Biotics**:
     - use EOs or procedural features
-    - we will need the observation date field, the RA field, EO_ID, and SF_ID
+    - we will need at least the observation date field, the RA field, EO_ID, and SF_ID
   - for **all other sources**:
     - ***If not already polygons:*** buffer the observations to create a polygon feature layer
     - retain date column. If one doesn't exist, add it and fill out best as you can
@@ -40,10 +40,12 @@ Last updated: 2008-05-15
 
 #### 3. Clean up each observation feature class
 
-- Sort by the `NeedEdit` column; features marked `1` need attention due to either date or SFRA attributes:
-  - `SFRACalc`: this is required for SDM and should not have empty (Null) values. Assign one of the coded values (`Very High`, `High`, `Medium`, `Low`, or `Very Low`) for every feature. These ranks are also used to select a preferred polygon to use in overlapping areas
-  - `dateCalc` : try to add or fix any dates which have `dateFlag` = 1. Dates are not required, but will be used to rank overlapping polygons when RA is equal. Dates are also used to tag environmental conditions for temporal variables (e.g. land cover), so a best guess is highly recommended here
+- Sort by the `sdm_ra_flag` column; features marked `1` need attention due to either date or SFRA attributes:
+  - `tempSFRACalc`: this is required for SDM and should not have empty (Null) values. Assign one of the coded values (`Very High`, `High`, `Medium`, `Low`, or `Very Low`) for every feature. These ranks are also used to select a preferred polygon to use in overlapping areas
+- Sort by the `sdm_date_flag` column; features marked `1` need attention due to either date or SFRA attributes:
+  - `sdm_date` : try to add or fix any dates which have `sdm_date_flag = 1`. Dates are not required, but will be used to rank overlapping polygons when RA is equal. Dates are also used to tag environmental conditions for temporal variables (e.g. land cover), so a best guess is highly recommended here
     - If you don't know the month and/or day, you can use double zeros for those parts of the date (e.g. `2015-07-00` or `2001-00-00`)
+- ***Optional***: you can also update the `sdm_use` and `sdm_use_why` columns now to exclude features (by setting `sdm_use = 0`) from further processing: these will not be in the merged datasets created in step 4.
 
 #### 4. Merge datasets into a SDM training dataset using tool *'Merge Observation Feature Classes'*
 
@@ -55,15 +57,15 @@ Last updated: 2008-05-15
 
 #### 5. Edit SDM training dataset as needed
 
-The resulting file from step 4 will have spatial duplicates identified, in the `use` and `use_why` columns, preferring higher RA values and later dates of observations
+The resulting file from step 4 will have spatial duplicates identified, in the `sdm_use` and `sdm_use_why` columns, preferring higher RA values and later dates of observations
 
-- features marked `use = 1` are the highest ranked features and will not overlap any other `use = 1` feature.
-- `use = 0` are spatial duplicates. These spatially overlapped with another feature with a higher rank (higher RA or later date)
+- features marked `sdm_use = 1` are the highest ranked features and will not overlap any other `sdm_use = 1` feature.
+- `sdm_use = 0` are spatial duplicates. These spatially overlapped with another feature with a higher rank (higher RA or later date)
 
 - now edit the file as needed for SDM 
   - these will be primarily spatial edits
   - table edits should be limited to adding comments or changing `use` field to further exclude features
-  - assign  `use = 0` to features you want to exclude from the training data, and put in reasoning in `use_why`
+  - assign  `sdm_use = 0` to features you want to exclude from the training data, and put in reasoning in `sdm_use_why`
 
 ---
 
