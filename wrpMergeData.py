@@ -23,15 +23,15 @@ from sdmPresencePreProc import *
 
 # Input data
 # Working geodatabase, and optionally where to get input data from. Default (if inList is '#') is to take all feature classes from here and merge them.
-inGDB = r'C:\David\scratch\trifcalc.gdb'
+inGDB = r'C:\David\projects\aquaSDM_prep\eo_reach_testing\prepped_sp_data\acipoxyr\acipoxyr.gdb'
 
 # The output merged feature class
-outPolys = r'C:\David\scratch\trifcalc.gdb\trifcalc_merged' # replace with your data path
+outPolys = r'C:\David\projects\aquaSDM_prep\eo_reach_testing\prepped_sp_data\acipoxyr\acipoxyr.gdb\acipoxyr_merged2' # replace with your data path
 
 # The list of feature classes to merge. These must be contained within brackets, separated by commas.
 # It is okay to have just one feature class in the list, but it must be in brackets.
 # You can leave it as default ("#"), and all feature classes from inGDB will be merged.
-inList = "#"
+inList = ['acipoxyr_dgif','acipoxyr_VAbiotics']
 # inList = ['SWP_buff','ISOMEDdiversity_buff']
 
 # A feature class with the template projection for the merged dataset

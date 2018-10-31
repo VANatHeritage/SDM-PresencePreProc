@@ -220,6 +220,11 @@ def make_gdb(path):
    else:
       return True
 
+def make_gdb_name(string):
+   '''Makes strings GDB-compliant'''
+   nm = re.sub('[^A-Za-z0-9]+', '_', string)
+   return nm
+
 ##################################################################################################################
 # Use the main function below to run a function directly from Python IDE or command line with hard-coded variables
 
