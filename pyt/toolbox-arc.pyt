@@ -14,6 +14,7 @@ from datetime import datetime as datetime
 
 from arcpy.sa import *
 arcpy.CheckOutExtension("Spatial")
+scratchGDB = r"C:\Users\qsv44994\Documents\ArcGIS\Default.gdb"
 
 def countFeatures(features):
    '''Gets count of features'''
@@ -129,7 +130,7 @@ def JoinFields(ToTab, fldToJoin, FromTab, fldFromJoin, addFields):
       printMsg('"%s" field done.' %fld)
    return ToTab
    
-def SpatialCluster (inFeats, fldID, searchDist, fldGrpID = 'grpID'):
+def SpatialCluster (inFeats, searchDist, fldGrpID = 'grpID'):
    '''Clusters features based on specified search distance. Features within twice the search distance of each other will be assigned to the same group.
    inFeats = The input features to group
    fldID = The field containing unique feature IDs in inFeats
@@ -138,6 +139,8 @@ def SpatialCluster (inFeats, fldID, searchDist, fldGrpID = 'grpID'):
    
    # Initialize trash items list
    trashList = []
+   
+   fldID = str(arcpy.Describe(inFeats).Fields[0].Name)
    
    # Delete the GrpID field from the input features, if it already exists.
    try:
@@ -158,7 +161,7 @@ def SpatialCluster (inFeats, fldID, searchDist, fldGrpID = 'grpID'):
    trashList.append(explBuff)
    
    # Add and populate grpID field in buffers
-   printMsg('Adding and populating grouping field in buffers')
+   printMsg('Populating grouping field in buffers')
    arcpy.AddField_management (explBuff, fldGrpID, 'LONG')
    arcpy.CalculateField_management (explBuff, fldGrpID, '!OBJECTID!', 'PYTHON')
    
@@ -171,7 +174,8 @@ def SpatialCluster (inFeats, fldID, searchDist, fldGrpID = 'grpID'):
    # Join grpID field to input features
    # This employs a custom function because arcpy is stupid slow at this
    JoinFields(inFeats, fldID, joinFeats, 'TARGET_FID', [fldGrpID])
-   
+   #arcpy.JoinField_management(inFeats, fldID, joinFeats, 'TARGET_FID', [fldGrpID])
+
    # Cleanup: delete buffers, spatial join features
    garbagePickup(trashList)
    
@@ -179,6 +183,84 @@ def SpatialCluster (inFeats, fldID, searchDist, fldGrpID = 'grpID'):
    
    return inFeats
    
+
+# internal spatial clustering function over network dataset
+def SpatialClusterNetwork(species_pts, sep_dist, network, dams, grp_fld = 'grpID'):
+   
+   # from arcpy.na import *
+   
+   #set environment settings
+   arcpy.CheckOutExtension("Network")
+   arcpy.env.overwriteOutput = True
+   
+   #calculate separation distance to be used in tools. use half of original minus
+   #1 to account for 1 meter buffer and overlapping buffers
+   sep_dist = int(sep_dist)
+   sep_dist = (sep_dist/2)-1
+   
+   #create temporary unique id for use in join field later
+   i=1
+   fieldnames = [field.name for field in arcpy.ListFields(species_pts)]
+   if 'temp_join_id' not in fieldnames:
+       arcpy.AddField_management(species_pts,"temp_join_id","LONG")
+       with arcpy.da.UpdateCursor(species_pts,"temp_join_id") as cursor:
+           for row in cursor:
+               row[0] = i
+               cursor.updateRow(row)
+               i+=1
+   
+   #create service area line layer
+   service_area_lyr = arcpy.na.MakeServiceAreaLayer(network,os.path.join(scratchGDB,"service_area_temp"),"Length","TRAVEL_FROM",sep_dist,polygon_type="NO_POLYS",line_type="TRUE_LINES",overlap="OVERLAP")
+   service_area_lyr = service_area_lyr.getOutput(0)
+   subLayerNames = arcpy.na.GetNAClassNames(service_area_lyr)
+   facilitiesLayerName = subLayerNames["Facilities"]
+   serviceLayerName = subLayerNames["SALines"]
+   arcpy.na.AddLocations(service_area_lyr, facilitiesLayerName, species_pts, "", "")
+   arcpy.na.Solve(service_area_lyr)
+   lines = arcpy.mapping.ListLayers(service_area_lyr,serviceLayerName)[0]
+   flowline_clip = arcpy.CopyFeatures_management(lines,os.path.join(scratchGDB,"service_area"))
+   
+   #buffer clipped flowlines by 1 meter
+   flowline_buff = arcpy.Buffer_analysis(flowline_clip,os.path.join(scratchGDB,"flowline_buff"),"1 Meter","FULL","ROUND")
+   
+   #dissolve flowline buffers
+   flowline_diss = arcpy.Dissolve_management(flowline_buff,os.path.join(scratchGDB,"flowline_diss"),multi_part="SINGLE_PART")
+   
+   if dams:
+       #buffer dams by 1.1 meters
+       dam_buff = arcpy.Buffer_analysis(dams,os.path.join(scratchGDB,"dam_buff"),"1.1 Meter","FULL","FLAT")
+       #split flowline buffers at dam buffers by erasing area of dam
+       flowline_erase = arcpy.Erase_analysis(flowline_diss,dam_buff,os.path.join(scratchGDB,"flowline_erase"))
+       multipart_input = flowline_erase
+   else:
+       multipart_input = flowline_diss
+   
+   #multi-part to single part to create unique polygons
+   single_part = arcpy.MultipartToSinglepart_management(multipart_input,os.path.join(scratchGDB,"single_part"))
+   
+   #create unique group id
+   arcpy.AddField_management(single_part,grp_fld,"LONG")
+   num = 1
+   with arcpy.da.UpdateCursor(single_part,grp_fld) as cursor:
+       for row in cursor:
+           row[0] = num
+           cursor.updateRow(row)
+           num+=1
+   
+   #join group id of buffered flowlines to closest points
+   s_join = arcpy.SpatialJoin_analysis(target_features=species_pts, join_features=single_part, out_feature_class=os.path.join(scratchGDB,"s_join"), join_operation="JOIN_ONE_TO_ONE", join_type="KEEP_ALL", match_option="CLOSEST", search_radius="5000 Meters", distance_field_name="")
+   
+   #join field to original dataset
+   join_field = [field.name for field in arcpy.ListFields(s_join)]
+   join_field = join_field[-1]
+   # arcpy.JoinField_management(species_pts,"temp_join_id",s_join,"temp_join_id",join_field)
+   JoinFields(species_pts, "temp_join_id",s_join,"temp_join_id",[join_field])
+   
+   #delete temporary fields and datasets
+   # arcpy.DeleteField_management(species_pts,"temp_join_id")
+   
+   return species_pts
+
 def tbackInLoop():
    '''Standard error handling routing to add to bottom of scripts'''
    tb = sys.exc_info()[2]
@@ -192,7 +274,7 @@ def tbackInLoop():
    printMsg(msgs)
    
    return msgList
-   
+
 def unique_values(table, field):
    ''' Gets list of unique values in a field.
    Thanks, ArcPy Cafe! https://arcpy.wordpress.com/2012/02/01/create-a-list-of-unique-field-values/'''
@@ -354,36 +436,34 @@ class Field:
 # Initial fields for editing
 fldSpCode = Field('sp_code', 'TEXT', 12) # Code to identify species. Example: 'clemaddi'. If subspecies, use 12 letter code
 fldSrcTab = Field('src_table', 'TEXT', 50) # Code to identify source dataset. Example: 'biotics'
-fldSFID = Field('src_featid', 'LONG', '') # original feature ID (Source feature ID in Biotics)
-fldEOID = Field('src_grpid', 'LONG', '') # original group ID (EO ID in biotics)
-fldSrcID = Field('src_fullid', 'TEXT', 60) # Unique ID identifying source table and observation
-fldFeatID = Field('sdm_featid', 'LONG', '') # new unique id by polygon
-fldGrpID = Field('sdm_grpid', 'LONG', '') # new unique id by group
+fldSrcFID = Field('src_fid','LONG','') # original source table FID
+fldSFID = Field('src_featid', 'LONG', '') # original feature's ID (Source feature ID in Biotics)
+fldEOID = Field('src_grpid', 'TEXT', 50) # original group ID (EO ID in biotics)
 fldUse = Field('sdm_use', 'SHORT', '') # Binary: Eligible for use in model training (1) or not (0)
 fldUseWhy = Field('sdm_use_why', 'TEXT', 50) # Comments on eligibility for use
 fldDateCalc = Field('sdm_date', 'TEXT', 10) # Date in standardized yyyy-mm-dd format
 fldDateFlag = Field('sdm_date_flag', 'SHORT', '') # Flag uncertain year. 0 = certain; 1 = uncertain
 fldRA = Field('sdm_ra', 'SHORT', '') # Source feature representation accuracy
 fldRAFlag = Field('sdm_ra_flag', 'SHORT', '') # Flag for editing. 0 = okay; 1 = needs edits; 2 = edits done
+fldFeatID = Field('sdm_featid', 'LONG', '') # new unique id by polygon
+fldGrpID = Field('sdm_grpid', 'LONG', '') # new unique id by group
 fldSFRACalc = Field('tempSFRACalc', 'TEXT', 20) # for storing original RA column values
 # fldIsDup = Field('isDup', 'SHORT', '') # Flag to identify duplicate records based on src_id field. 0 = no duplicates; 1 = duplicates present; 2 = duplicates have been removed
 # fldRev = Field('rev', 'SHORT', '') # Flag for review. 0 = okay; 1 = needs review; 2 = review done
 # fldComments = Field('revComments', 'TEXT', 250) # Field for review/editing comments
 
-initFields = [fldSpCode, fldSrcTab, fldSFID, fldEOID, fldSrcID, fldFeatID, fldGrpID, fldUse, fldUseWhy, fldDateCalc, fldDateFlag, fldRA, fldRAFlag, fldSFRACalc] 
-# fldIsDup, fldRev, fldComments
+initFields = [fldSpCode, fldSrcTab, fldSrcFID, fldSFID, fldEOID, fldUse, fldUseWhy, fldDateCalc, fldDateFlag, fldRA, fldRAFlag,fldFeatID, fldGrpID, fldSFRACalc] 
+initDissList = [f.Name for f in initFields] 
 
+# fldIsDup, fldRev, fldComments
 # Additional fields for automation
 #fldRaScore = Field('raScore', 'SHORT', '') # Quality score based on Representation Accuracy
 #fldDateScore = Field('dateScore', 'SHORT', '') # Quality score based on date
 #fldPQI = Field('pqiScore', 'SHORT', '') # Composite quality score ("Point Quality Index")
 #fldGrpUse = Field('grpUse', 'LONG', '') # Identifies highest quality records in group (1) versus all other records (0)
 # addFields = [fldRaScore, fldDateScore, fldPQI, fldGrpUse]
-# not using this
+# not using these
 
-# list of all fields for dissolving in MergeData
-initDissList = ['sp_code','src_table','src_featid','src_grpid','src_fullid','sdm_featid','sdm_grpid','sdm_use','sdm_use_why','sdm_date','sdm_date_flag','sdm_ra','sdm_ra_flag','tempSFRACalc']
-### header field data
 
 class Toolbox(object):
    def __init__(self):
@@ -391,7 +471,7 @@ class Toolbox(object):
       self.alias = "sdmPresencePreProc"
       
       # List of tool classes associated with this toolbox (defined classes below)
-      self.tools = [AddInitFlds, MergeData]
+      self.tools = [AddInitFlds, MergeData, GrpOcc]
       
 class AddInitFlds(object):
    def __init__(self):
@@ -409,7 +489,7 @@ class AddInitFlds(object):
       inPolys = arcpy.Parameter(
             displayName="Input Features (polygons)",
             name="inPolys",
-            datatype="DEFeatureClass",
+            datatype="GPFeatureLayer",
             parameterType="Required",
             direction="Input")
             
@@ -486,9 +566,17 @@ class AddInitFlds(object):
             f1.append(f.name)
             f2.append(f.name)
          params[3].filter.list = f1
+         if 'OBSDATE' in f1:
+            params[3].value = 'OBSDATE'
          params[4].filter.list = f2
+         if 'SFRA' in f1:
+            params[4].value = 'SFRA'
          params[5].filter.list = f2
+         if 'EO_ID' in f1:
+            params[5].value = 'EO_ID'
          params[6].filter.list = f2
+         if 'SF_ID' in f1:
+            params[6].value = 'SF_ID'
       return
       
    def updateMessages(self, params):
@@ -498,6 +586,8 @@ class AddInitFlds(object):
 
    def execute(self, params, messages):
       """The source code of the tool."""
+      
+      arcpy.env.overwriteOutput = True
       
       inPolys = params[0].valueAsText
       spCode = params[1].valueAsText
@@ -525,8 +615,8 @@ class AddInitFlds(object):
       params[7].value = outPolys
       
       # Unique ID (OBJECT/FID)
-      arcpy.AddField_management(inPolys, 'orfid', 'LONG','')
       fldID = str(arcpy.Describe(inPolys).Fields[0].Name)
+      arcpy.AddField_management(inPolys, 'orfid', 'LONG','')
       arcpy.CalculateField_management(inPolys, 'orfid', '!' + fldID + '!', 'PYTHON')
       fldID = 'orfid'
       
@@ -552,10 +642,13 @@ class AddInitFlds(object):
       arcpy.CalculateField_management (outPolys, fldSpCode.Name, expression, 'PYTHON')
       printMsg('Species code field set to "%s".' % spCode)
       
-      # table id (source table + object/fid)
-      expression = "'%s-' + '!%s!'" % (srcTab, fldID)
-      arcpy.CalculateField_management (outPolys, fldSrcID.Name, expression, 'PYTHON')
+      # table fid (object/fid)
+      expression = "!%s!" % (fldID)
+      arcpy.CalculateField_management (outPolys, fldSrcFID.Name, expression, 'PYTHON')
       printMsg('Unique ID field populated.')
+      
+      # use
+      arcpy.CalculateField_management(outPolys, fldUse.Name, '1', "PYTHON")
       
       # EO_ID and SF_ID
       if fldEO != "#" and str(fldEO) != str(fldEOID.Name):
@@ -566,7 +659,6 @@ class AddInitFlds(object):
          expression = "!%s!" % fldSF
          arcpy.CalculateField_management (outPolys, fldSFID.Name, expression, 'PYTHON')
          printMsg('%s field set to "%s".' % (fldSFID.Name, fldSF))
-      
       if fldSFRA != "#":
          expression = "!%s!" % fldSFRA
          arcpy.CalculateField_management (outPolys, fldSFRACalc.Name, expression, 'PYTHON')
@@ -712,6 +804,8 @@ class MergeData(object):
    def execute(self, params, messages):
       """The source code of the tool."""
       
+      arcpy.env.overwriteOutput = True
+      
       inGDB = params[0].valueAsText
       outPolys = params[1].valueAsText
       if params[2].value:
@@ -793,3 +887,129 @@ class MergeData(object):
       
       garbagePickup([outPolys_temp2])
       return outPolys
+      
+      
+class GrpOcc(object):
+   def __init__(self):
+      self.label = "Group occurrences"
+      self.description ="Groups occurrences in a merged feature occurrence dataset," + \
+                        "using a seperation distance, optionally across a defined network."
+      self.canRunInBackground = True
+
+   def getParameterInfo(self):
+      """Define parameter definitions"""
+      inPolys = arcpy.Parameter(
+            displayName="Input Features (polygons)",
+            name="inPolys",
+            datatype="GPFeatureLayer",
+            parameterType="Required",
+            direction="Input")
+            
+      sepDist = arcpy.Parameter(
+            displayName="Separation distance (meters)",
+            name = "sepDist",
+            datatype = "GPString",
+            parameterType = "Required",
+            direction = "Input")
+            
+      grpFld = arcpy.Parameter(
+            displayName="Field for group IDs",
+            name = "grpFld",
+            datatype = "GPString",
+            parameterType = "Required",
+            direction = "Input")
+            
+      network = arcpy.Parameter(
+            displayName="Network dataset (requires Network Analyst extension)",
+            name = "network",
+            datatype = "DENetworkDataset",
+            parameterType = "Optional",
+            direction = "Input")
+            
+      barriers = arcpy.Parameter(
+            displayName="Feature barriers",
+            name = "barriers",
+            datatype = "DEFeatureClass",
+            parameterType = "Optional",
+            direction = "Input")
+            
+      grpFld.parameterDependencies = [inPolys.name]
+      params = [inPolys,sepDist,grpFld,network,barriers]
+      return params
+
+   def isLicensed(self):
+      """Check whether tool is licensed to execute."""
+      return True  # tool can be executed
+
+   def updateParameters(self, params):
+      """Modify the values and properties of parameters before internal
+      validation is performed.  This method is called whenever a parameter
+      has been changed. Example would be updating field list after a feature 
+      class was selected for a parameter."""
+      if params[0].value:
+         f1 = list("#")
+         for f in arcpy.ListFields(params[0].value):
+            f1.append(f.name)
+         params[2].filter.list = f1
+         if fldGrpID.Name in f1:
+            params[2].value = fldGrpID.Name
+      return
+      
+   def updateMessages(self, params):
+      """Modify the messages created by internal validation for each tool
+      parameter.  This method is called after internal validation."""
+      return
+
+   def execute(self, params, messages):
+      """The source code of the tool."""
+      
+      arcpy.env.overwriteOutput = True
+      
+      inPolys = params[0].valueAsText
+      sepDist = int(params[1].valueAsText)
+      grpFld = params[2].valueAsText
+      
+      # Unique ID (OBJECT/FID)
+      # fldID = str(arcpy.Describe(inPolys).Fields[0].Name)
+      # arcpy.AddField_management(inPolys, 'orfid', 'LONG','')
+      # arcpy.CalculateField_management(inPolys, 'orfid', '!' + fldID + '!', 'PYTHON')
+      # fldID = 'orfid'
+      
+      inPolys2 = scratchGDB + os.sep + 'inPolys'
+      arcpy.Select_analysis(inPolys,inPolys2,fldUse.Name + ' = 1')
+      # Unique ID (OBJECT/FID)
+      fldID = str(arcpy.Describe(inPolys2).Fields[0].Name)
+      
+      # may implement barriers into regular grouping
+      if params[4].value:
+         barriers = params[4].valueAsText
+      
+      if not params[3].value:
+         # regular grouping
+         sd = str(int(sepDist/2)) + " METERS"
+         printMsg("Using buffer dist. of " + sd)
+         # original is joined automatically
+         SpatialCluster(inFeats = inPolys2, searchDist = sd, fldGrpID = grpFld)
+         # joingrp = 'grpID'
+         # JoinFields(inPolys, fldID, inPolys2, fldID, [joingrp])
+
+         # arcpy.JoinField_management(inPolys, fldID, inPolys2, fldID, [joingrp])
+      else:
+         # network analyst
+         #get parameters from arc tool
+         network = params[3].valueAsText
+         # feature to point
+         inPt = arcpy.FeatureToPoint_management(in_features=inPolys2, out_feature_class= scratchGDB + os.sep + 'facil', point_location="INSIDE")
+         arcpy.DeleteField_management(inPt, grpFld)
+         joingrp = SpatialClusterNetwork(inPt, sepDist, network, barriers, grpFld)
+         # join group values to original using original FIDs
+         JoinFields(inPolys2, fldID, inPt, fldID, [grpFld])
+
+      # update final group field (grpID is temp from fns)
+      # arcpy.CalculateField_management(inPolys, grpFld, '!' + joingrp + '!', 'PYTHON')
+      # arcpy.DeleteField_management(inPolys, joingrp)
+      
+      arcpy.CopyFeatures_management(inPolys2, inPolys + '_final')
+      
+      return inPolys + '_final'
+      
