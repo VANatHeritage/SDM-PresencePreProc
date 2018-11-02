@@ -14,7 +14,7 @@ from datetime import datetime as datetime
 
 from arcpy.sa import *
 arcpy.CheckOutExtension("Spatial")
-scratchGDB = r"C:\Users\qsv44994\Documents\ArcGIS\Default.gdb"
+scratchGDB = "in_memory"
 
 def countFeatures(features):
    '''Gets count of features'''
@@ -199,6 +199,7 @@ def SpatialClusterNetwork(inFeats, sepDist, network, barriers, fldGrpID = 'grpID
    Adapted from script by Molly Moore, PANHP'''
    
    # from arcpy.na import *
+   netName = arcpy.Describe(network).name
    
    # set environment settings
    arcpy.CheckOutExtension("Network")
@@ -211,7 +212,7 @@ def SpatialClusterNetwork(inFeats, sepDist, network, barriers, fldGrpID = 'grpID
    
    sd0 = sepDist.split(" ")
    if len(sd0) == 2:
-      # sepDist = str(int(sd0[0])/2 - 1) + " " + sd0[1] # cannot handle different units
+      # sepDist = str(int(sd0[0])/2 - 1) + " " + sd0[1] # cannot handle unit text
       sepDist = str(int(sd0[0])/2 - 1)
    else:
       sepDist = str(int(sd0[0])/2 - 1)
@@ -227,22 +228,33 @@ def SpatialClusterNetwork(inFeats, sepDist, network, barriers, fldGrpID = 'grpID
                cursor.updateRow(row)
                i+=1
    
+   # generate 'facilities'
+   facil1 = arcpy.FeatureToPoint_management(in_features=inFeats, out_feature_class= scratchGDB + os.sep + 'facil1', point_location="INSIDE")
+   facil2 = arcpy.SpatialJoin_analysis(str(network) + "_Junctions", inFeats, scratchGDB + os.sep + 'facil2', "JOIN_ONE_TO_ONE", "KEEP_COMMON", "#", "INTERSECT","", "")
+   facil = arcpy.Merge_management([facil1, facil2], scratchGDB + os.sep + 'facil', field_mappings="""temp_join_id "temp_join_id" true true false 4 Long 0 0 ,First,#,facil1,temp_join_id,-1,-1,facil2,temp_join_id,-1,-1""")
+   
    #create service area line layer
    service_area_lyr = arcpy.na.MakeServiceAreaLayer(network,os.path.join(scratchGDB,"service_area_temp"),"Length","TRAVEL_FROM",sepDist,polygon_type="NO_POLYS",line_type="TRUE_LINES",overlap="OVERLAP")
    service_area_lyr = service_area_lyr.getOutput(0)
    subLayerNames = arcpy.na.GetNAClassNames(service_area_lyr)
    facilitiesLayerName = subLayerNames["Facilities"]
    serviceLayerName = subLayerNames["SALines"]
-   arcpy.na.AddLocations(service_area_lyr, facilitiesLayerName, inFeats, "", "")
+   arcpy.na.AddLocations(service_area_lyr, facilitiesLayerName, facil, "", "5000 Meters", search_criteria = [[str(netName), 'SHAPE']]) # large search tolerance to make sure all points get on network (large rivers with artificial paths)
    arcpy.na.Solve(service_area_lyr)
    lines = arcpy.mapping.ListLayers(service_area_lyr,serviceLayerName)[0]
    flowline_clip = arcpy.CopyFeatures_management(lines,os.path.join(scratchGDB,"service_area"))
    
    #buffer clipped flowlines by 1 meter
-   flowline_buff = arcpy.Buffer_analysis(flowline_clip,os.path.join(scratchGDB,"flowline_buff"),"1 Meter","FULL","ROUND")
+   flowline_buff = arcpy.Buffer_analysis(flowline_clip,os.path.join(scratchGDB,"flowline_buff"),"1 Meter","FULL","ROUND",dissolve_option="ALL")
    
-   #dissolve flowline buffers
-   flowline_diss = arcpy.Dissolve_management(flowline_buff,os.path.join(scratchGDB,"flowline_diss"),multi_part="SINGLE_PART")
+   # merge service areas with original polys that intersect service areas (so they join up for polygons with multiple facility points)
+   arcpy.MakeFeatureLayer_management(inFeats, 'inFeats') 
+   arcpy.SelectLayerByLocation_management('inFeats', 'intersect', flowline_buff)
+   flowline_merge = arcpy.Union_analysis([flowline_buff, 'inFeats'], os.path.join(scratchGDB,"flowline_merge"))
+   arcpy.SelectLayerByAttribute_management('inFeats','CLEAR_SELECTION')
+   
+   #dissolve flowline buffers (single parts)
+   flowline_diss = arcpy.Dissolve_management(flowline_merge,os.path.join(scratchGDB,"flowline_diss"),multi_part="SINGLE_PART")
    
    if barriers:
        #buffer barriers by 1.1 meters
@@ -250,11 +262,10 @@ def SpatialClusterNetwork(inFeats, sepDist, network, barriers, fldGrpID = 'grpID
        #split flowline buffers at dam buffers by erasing area of dam
        flowline_erase = arcpy.Erase_analysis(flowline_diss,dam_buff,os.path.join(scratchGDB,"flowline_erase"))
        multipart_input = flowline_erase
+       #multi-part to single part to create unique polygons after erase
+       single_part = arcpy.MultipartToSinglepart_management(multipart_input,os.path.join(scratchGDB,"single_part"))
    else:
-       multipart_input = flowline_diss
-   
-   #multi-part to single part to create unique polygons
-   single_part = arcpy.MultipartToSinglepart_management(multipart_input,os.path.join(scratchGDB,"single_part"))
+       single_part = flowline_diss
    
    #create unique group id
    arcpy.AddField_management(single_part,fldGrpID,"LONG")
@@ -266,16 +277,13 @@ def SpatialClusterNetwork(inFeats, sepDist, network, barriers, fldGrpID = 'grpID
            num+=1
    
    #join group id of buffered flowlines to closest points
-   s_join = arcpy.SpatialJoin_analysis(target_features=inFeats, join_features=single_part, out_feature_class=os.path.join(scratchGDB,"s_join"), join_operation="JOIN_ONE_TO_ONE", join_type="KEEP_ALL", match_option="CLOSEST", search_radius="5000 Meters", distance_field_name="")
+   s_join = arcpy.SpatialJoin_analysis(target_features=facil, join_features=single_part, out_feature_class=os.path.join(scratchGDB,"s_join"), join_operation="JOIN_ONE_TO_ONE", join_type="KEEP_ALL", match_option="CLOSEST", search_radius="5000 Meters", distance_field_name="")
    
    #join field to original dataset
    join_field = [field.name for field in arcpy.ListFields(s_join)]
    join_field = join_field[-1]
    # arcpy.JoinField_management(inFeats,"temp_join_id",s_join,"temp_join_id",join_field)
-   JoinFields(inFeats, "temp_join_id",s_join,"temp_join_id",[join_field])
-   
-   #delete temporary fields and datasets
-   # arcpy.DeleteField_management(inFeats,"temp_join_id")
+   JoinFields(inFeats, "temp_join_id",s_join,"temp_join_id",[fldGrpID])
    
    return inFeats
 
@@ -1030,11 +1038,11 @@ class GrpOcc(object):
             printMsg("Using network grouping with distance of " + str(sepDist))
             network = params[3].valueAsText
             # feature to point
-            inPt = arcpy.FeatureToPoint_management(in_features=inPolys2, out_feature_class= scratchGDB + os.sep + 'facil', point_location="INSIDE")
-            arcpy.DeleteField_management(inPt, grpFld)
-            joingrp = SpatialClusterNetwork(inPt, sepDist, network, barriers, grpFld)
+            # inPt = arcpy.FeatureToPoint_management(in_features=inPolys2, out_feature_class= scratchGDB + os.sep + 'facil', point_location="INSIDE")
+            arcpy.DeleteField_management(inPolys2, grpFld)
+            inPolys2 = SpatialClusterNetwork(inPolys2, sepDist, network, barriers, grpFld)
             # join group values to original using original FIDs
-            JoinFields(inPolys2, fldID, inPt, fldID, [grpFld])
+            # JoinFields(inPolys2, fldID, inPt, fldID, [grpFld])
       else:
          # just update column from src_grpid
          arcpy.CalculateField_management(inPolys2, fldGrpID.Name, '!' + fldEOID.Name + '!', 'PYTHON')
