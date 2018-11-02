@@ -67,15 +67,23 @@ The resulting file from step 4 will have spatial duplicates identified, in the `
   - table edits should be limited to adding comments or changing `use` field to further exclude features
   - assign  `sdm_use = 0` to features you want to exclude from the training data, and put in reasoning in `sdm_use_why`
 
+#### 6. Finalize dataset
+
+- After finished with spatial edits, a group ID needs to be added. This can be done with the **3. Finalize/Group occurrences** tool. 
+- This tool will only carry over occurrences marked `sdm_use = 1`
+- It can group in different ways, depending on what parameters are specified:
+  - If you don't put in a distance, groups will be copied over from `src_grpid` (e.g. the original EO_ID)
+  - If you put in a distance, automatic grouping by that separation distance will be used
+  - If you put in a distance and a network dataset, automatic grouping by separation distance along the network will be used (e.g. for aquatic species)
+- The output dataset will have `sdm_featid` and `sdm_grpid` populated. It will print a warning if there are empty `sdm_grpid` values. This will likely only be the case if you copied over from `src_grpid`, and had empty values in that column.
+
 ---
 
-These steps could  be automated later:
 
-- Tagging reaches from aquatic polygons
-- Adding group ids
-  - option 1: use EO_ID (only works if all source polygons had this assigned)
-  - option 2: use automatic grouping by a separation distance
-    - for aquatics, could implement a stream-distance separation distance grouping
-    - for terrestrial, a simple distance buffer should suffice
-    - how to implement barriers?
+
+
+
+- Still to do:
+  - converts polygons to point for networking grouping: better options for this?
+  - implement barriers for terrestrial grouping?
 
