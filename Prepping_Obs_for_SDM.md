@@ -2,7 +2,7 @@
 
 Author: David Bucklin
 
-Last updated: 2008-10-31
+Last updated: 2018-11-02
 
 ## To add the toolbox to ArcMap:
 
