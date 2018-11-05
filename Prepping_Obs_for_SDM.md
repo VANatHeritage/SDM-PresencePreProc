@@ -40,9 +40,9 @@ Last updated: 2018-11-02
 
 #### 3. Clean up each observation feature class
 
-- Sort by the `sdm_ra_flag` column; features marked `1` need attention due to either date or SFRA attributes:
+- Sort by the `sdm_ra_flag` column; features marked `1` need attention due to SFRA attributes:
   - `tempSFRACalc`: this is required for SDM and should not have empty (Null) values. Assign one of the coded values (`Very High`, `High`, `Medium`, `Low`, or `Very Low`) for every feature. These ranks are also used to select a preferred polygon to use in overlapping areas
-- Sort by the `sdm_date_flag` column; features marked `1` need attention due to either date or SFRA attributes:
+- Sort by the `sdm_date_flag` column; features marked `1` need attention due to date attributes:
   - `sdm_date` : try to add or fix any dates which have `sdm_date_flag = 1`. Dates are not required, but will be used to rank overlapping polygons when RA is equal. Dates are also used to tag environmental conditions for temporal variables (e.g. land cover), so a best guess is highly recommended here
     - If you don't know the month and/or day, you can use double zeros for those parts of the date (e.g. `2015-07-00` or `2001-00-00`)
 - ***Optional***: you can also update the `sdm_use` and `sdm_use_why` columns now to exclude features (by setting `sdm_use = 0`) from further processing: these will not be in the merged datasets created in step 4.
@@ -52,7 +52,8 @@ Last updated: 2018-11-02
 - **IMPORTANT**: Do this step even if you only have one observation feature class. 
   - It will finalize the dataset with a standard set of fields, and mark duplicated areas among polygons, if they exist
 - If you want to include only a subset of the observation features classes in the geodatabase, you need to check the boxes next to them. With none checked, it will use all feature classes in the geodatabase
-- The output feature class needs to be output to a geodatabase. Best to output it to the input geodatabase
+- The output feature class needs to be output to a geodatabase
+- This tool will only carry over occurrences marked `sdm_use = 1`
 - This step creates several intermediate files during processing. Avoid accessing the input/output geodatabase during execution
 
 #### 5. Edit SDM training dataset as needed

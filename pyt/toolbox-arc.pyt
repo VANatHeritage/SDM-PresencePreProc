@@ -191,7 +191,7 @@ def SpatialCluster (inFeats, sepDist, fldGrpID = 'grpID'):
    
 
 # internal spatial clustering function over network dataset
-def SpatialClusterNetwork(inFeats, sepDist, network, barriers, fldGrpID = 'grpID'):
+def SpatialClusterNetwork(inFeats, sepDist, network, barriers = "#", fldGrpID = 'grpID'):
    '''Clusters features based on specified search distance across a linear network dataset.
    Features within the search distance of each other will be assigned to the same group.
    inFeats = The input features to group
@@ -272,7 +272,7 @@ def SpatialClusterNetwork(inFeats, sepDist, network, barriers, fldGrpID = 'grpID
    #dissolve flowline buffers (single parts)
    flowline_diss = arcpy.Dissolve_management(flowline_merge,os.path.join(scratchGDB,"flowline_diss"),multi_part="SINGLE_PART")
    
-   if barriers:
+   if barriers != "#":
        #buffer barriers by 1.1 meters
        dam_buff = arcpy.Buffer_analysis(barriers,os.path.join(scratchGDB,"dam_buff"),"1.1 Meter","FULL","FLAT")
        #split flowline buffers at dam buffers by erasing area of dam
@@ -300,6 +300,7 @@ def SpatialClusterNetwork(inFeats, sepDist, network, barriers, fldGrpID = 'grpID
    join_field = join_field[-1]
    # arcpy.JoinField_management(inFeats,"temp_join_id",s_join,"temp_join_id",join_field)
    JoinFields(inFeats, "temp_join_id",s_join,"temp_join_id",[fldGrpID])
+   arcpy.DeleteField_management(inFeats, "temp_join_id")
    
    return inFeats
 
@@ -490,9 +491,7 @@ fldSFRACalc = Field('tempSFRACalc', 'TEXT', 20) # for storing original RA column
 fldRAFlag = Field('sdm_ra_flag', 'SHORT', '') # Flag for editing. 0 = okay; 1 = needs edits; 2 = edits done
 fldFeatID = Field('sdm_featid', 'LONG', '') # new unique id by polygon
 fldGrpID = Field('sdm_grpid', 'TEXT', 50) # new unique id by group
-# fldIsDup = Field('isDup', 'SHORT', '') # Flag to identify duplicate records based on src_id field. 0 = no duplicates; 1 = duplicates present; 2 = duplicates have been removed
-# fldRev = Field('rev', 'SHORT', '') # Flag for review. 0 = okay; 1 = needs review; 2 = review done
-# fldComments = Field('revComments', 'TEXT', 250) # Field for review/editing comments
+# fldComments = Field('revComments', 'TEXT', 250) # Field for review/editing comments; dropping in favor of UseWhy
 
 initFields = [fldSpCode, fldSrcTab, fldSrcFID, fldSFID, fldEOID, fldUse, fldUseWhy, fldDateCalc, fldDateFlag, fldRA, fldSFRACalc, fldRAFlag, fldFeatID, fldGrpID] 
 initDissList = [f.Name for f in initFields] 
@@ -871,8 +870,6 @@ class MergeData(object):
          sr = arcpy.Describe(spatialRef).spatialReference
          
       # Make a new polygon feature class for output
-      #outPolys_temp = (os.path.basename(outPolys)).replace('.shp','') + '_temp'
-      #outPolys_temp2 = (os.path.basename(outPolys)).replace('.shp','') + '_notDissolved'
       outPolys_temp = outPolysNm + '_temp'
       outPolys_temp2 = outPolysNm + '_notDissolved'
       arcpy.CreateFeatureclass_management (inGDB, outPolys_temp, 'POLYGON', '', '', '', sr)
@@ -889,6 +886,7 @@ class MergeData(object):
       printMsg('Adding fields...')
       for f in initFields:
          arcpy.AddField_management (outPolys_temp, f.Name, f.Type, '', '', f.Length)
+      # these are for automatic scoring and not being used currently.
       #for f in addFields:
       #   arcpy.AddField_management (outPolys_temp, f.Name, f.Type, '', '', f.Length)
       
@@ -921,7 +919,7 @@ class MergeData(object):
       printMsg('Data merge complete.')
       
       # identify spatial duplicates (internal function)
-      MarkSpatialDuplicates(outPolys_temp2, fldDateCalc = 'sdm_date', fldSFRA = 'tempSFRACalc', fldUse = 'sdm_use', fldUseWhy = 'sdm_use_why', fldRaScore = 'sdm_ra')
+      MarkSpatialDuplicates(outPolys_temp2, fldDateCalc = fldDateCalc.Name, fldSFRA = fldSFRACalc.Name, fldUse = fldUse.Name, fldUseWhy = fldUseWhy.Name, fldRaScore = fldRA.Name)
       
       # final dissolve
       try:
@@ -1005,7 +1003,7 @@ class GrpOcc(object):
          for f in arcpy.ListFields(params[0].value):
             f1.append(f.name)
          params[2].filter.list = f1
-         if fldGrpID.Name in f1:
+         if fldGrpID.Name in f1 and not params[2].altered:
             params[2].value = fldGrpID.Name
       return
       
@@ -1039,6 +1037,8 @@ class GrpOcc(object):
          # may implement barriers into regular grouping
          if params[4].value:
             barriers = params[4].valueAsText
+         else:
+            barriers = "#"
          
          if not params[3].value:
             # regular grouping
