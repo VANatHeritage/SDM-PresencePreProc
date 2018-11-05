@@ -228,17 +228,33 @@ def SpatialClusterNetwork(inFeats, sepDist, network, barriers, fldGrpID = 'grpID
                cursor.updateRow(row)
                i+=1
    
-   # generate 'facilities'
-   facil1 = arcpy.FeatureToPoint_management(in_features=inFeats, out_feature_class= scratchGDB + os.sep + 'facil1', point_location="INSIDE")
-   facil2 = arcpy.SpatialJoin_analysis(str(network) + "_Junctions", inFeats, scratchGDB + os.sep + 'facil2', "JOIN_ONE_TO_ONE", "KEEP_COMMON", "#", "INTERSECT","", "")
-   facil = arcpy.Merge_management([facil1, facil2], scratchGDB + os.sep + 'facil', field_mappings="""temp_join_id "temp_join_id" true true false 4 Long 0 0 ,First,#,facil1,temp_join_id,-1,-1,facil2,temp_join_id,-1,-1""")
-   
    #create service area line layer
    service_area_lyr = arcpy.na.MakeServiceAreaLayer(network,os.path.join(scratchGDB,"service_area_temp"),"Length","TRAVEL_FROM",sepDist,polygon_type="NO_POLYS",line_type="TRUE_LINES",overlap="OVERLAP")
    service_area_lyr = service_area_lyr.getOutput(0)
    subLayerNames = arcpy.na.GetNAClassNames(service_area_lyr)
    facilitiesLayerName = subLayerNames["Facilities"]
    serviceLayerName = subLayerNames["SALines"]
+   
+   # generate centerpoints of features (1 per)
+   facil1 = arcpy.FeatureToPoint_management(in_features=inFeats, out_feature_class= scratchGDB + os.sep + 'facil1', point_location="INSIDE")
+   
+   # generate 'facilities' (using junction points - this is alternate to intersections option below)
+   #facil2 = arcpy.SpatialJoin_analysis(str(network) + "_Junctions", inFeats, scratchGDB + os.sep + 'facil2', "JOIN_ONE_TO_ONE", "KEEP_COMMON", "#", "INTERSECT","", "")
+   #facil = arcpy.Merge_management([facil1, facil2], scratchGDB + os.sep + 'facil', field_mappings="""temp_join_id "temp_join_id" true true false 4 Long 0 0 ,First,#,facil1,temp_join_id,-1,-1,facil2,temp_join_id,-1,-1""")
+   
+   # generate facilities using intersections of network + feature edges
+   netlines = str(network).replace("HydroNet_ND","NHDFlowline") # NHDFlowline is a is a fixed name, the lines that make up the network dataset.
+   printMsg("Generating facilities at intersections with network...")
+   facil2 = arcpy.PolygonToLine_management(in_features=inFeats, out_feature_class= scratchGDB + os.sep + 'facil2')
+   facil3 = arcpy.Intersect_analysis([netlines,facil2], scratchGDB + os.sep + 'facil3', output_type = "POINT")
+   facil4 = arcpy.MultipartToSinglepart_management(facil3, scratchGDB + os.sep + 'facil4')
+   facil5 = arcpy.Merge_management([facil1, facil4], scratchGDB + os.sep + 'facil5')
+   # re-attach temp_join_id
+   arcpy.DeleteField_management(facil5, "temp_join_id")
+   facil = arcpy.SpatialJoin_analysis(facil5, inFeats, scratchGDB + os.sep + 'facil', join_operation="JOIN_ONE_TO_ONE", join_type="KEEP_ALL", match_option="INTERSECTS")
+
+   # add locations and solve
+   printMsg("Solving service areas...")
    arcpy.na.AddLocations(service_area_lyr, facilitiesLayerName, facil, "", "5000 Meters", search_criteria = [[str(netName), 'SHAPE']]) # large search tolerance to make sure all points get on network (large rivers with artificial paths)
    arcpy.na.Solve(service_area_lyr)
    lines = arcpy.mapping.ListLayers(service_area_lyr,serviceLayerName)[0]
