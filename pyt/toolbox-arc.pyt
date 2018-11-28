@@ -8,6 +8,10 @@ Created on Thu May 10 11:52:23 2018
 # Everything from here until class(Toolbox)
 # is internal functions and field definitions
 
+# TODOS (list by priority; remove when added)
+# add datestamp [yyyymmdd] to merged files; still allow overwrite
+# sep. dists., other info. could be stored in a metadata table
+
 import arcpy
 import os, sys, traceback, re
 from datetime import datetime as datetime
@@ -98,7 +102,7 @@ def TabToDict(inTab, fldKey, fldValue):
          key = sc[0]
          val = sc[1]
          codeDict[key] = val
-   return codeDict      
+   return codeDict
 
 def JoinFields(ToTab, fldToJoin, FromTab, fldFromJoin, addFields):
    '''An alternative to arcpy's JoinField_management, which is unbearably slow.
@@ -145,8 +149,12 @@ def SpatialCluster (inFeats, sepDist, fldGrpID = 'grpID'):
    
    # Initialize trash items list
    trashList = []
-   
-   fldID = str(arcpy.Describe(inFeats).Fields[0].Name)
+   # Unique ID (OBJECT/FID)
+   a = arcpy.Describe(inFeats).Fields
+   for a1 in a:
+      if a1.Type == 'OID':
+         fldID = str(a1.Name)
+         break
    
    # Delete the GrpID field from the input features, if it already exists.
    try:
@@ -238,7 +246,7 @@ def SpatialClusterNetwork(inFeats, sepDist, network, barriers = "#", fldGrpID = 
    # generate centerpoints of features (1 per)
    facil1 = arcpy.FeatureToPoint_management(in_features=inFeats, out_feature_class= scratchGDB + os.sep + 'facil1', point_location="INSIDE")
    
-   # generate 'facilities' (using junction points - this is alternate to intersections option below)
+   # generate 'facilities' (using junction points - this is alternate/less precise option than intersections option below)
    #facil2 = arcpy.SpatialJoin_analysis(str(network) + "_Junctions", inFeats, scratchGDB + os.sep + 'facil2', "JOIN_ONE_TO_ONE", "KEEP_COMMON", "#", "INTERSECT","", "")
    #facil = arcpy.Merge_management([facil1, facil2], scratchGDB + os.sep + 'facil', field_mappings="""temp_join_id "temp_join_id" true true false 4 Long 0 0 ,First,#,facil1,temp_join_id,-1,-1,facil2,temp_join_id,-1,-1""")
    
@@ -496,6 +504,7 @@ fldGrpID = Field('sdm_grpid', 'TEXT', 50) # new unique id by group
 initFields = [fldSpCode, fldSrcTab, fldSrcFID, fldSFID, fldEOID, fldUse, fldUseWhy, fldDateCalc, fldDateFlag, fldRA, fldSFRACalc, fldRAFlag, fldFeatID, fldGrpID] 
 initDissList = [f.Name for f in initFields] 
 
+# not using these
 # fldIsDup, fldRev, fldComments
 # Additional fields for automation
 #fldRaScore = Field('raScore', 'SHORT', '') # Quality score based on Representation Accuracy
@@ -503,8 +512,11 @@ initDissList = [f.Name for f in initFields]
 #fldPQI = Field('pqiScore', 'SHORT', '') # Composite quality score ("Point Quality Index")
 #fldGrpUse = Field('grpUse', 'LONG', '') # Identifies highest quality records in group (1) versus all other records (0)
 # addFields = [fldRaScore, fldDateScore, fldPQI, fldGrpUse]
-# not using these
 
+# function to select (flow)lines using occurrences (for aquatics)
+#def GetLines(inPolys, inPolysID = 'sdm_featid', inLines, inLinesID = 'Permanent_Identifier', inAreas = [], tolerance = 1000):
+
+## WORKING
 
 class Toolbox(object):
    def __init__(self):
@@ -651,15 +663,9 @@ class AddInitFlds(object):
       srcTab = arcpy.Describe(inPolys).Name
       srcTab =  srcTab.replace('.shp','')
       srcTab = make_gdb_name(srcTab)
-      outPolys = outGDB + os.sep + srcTab
+      outPolys = outGDB + os.sep + srcTab + '_' + spCode
       
       params[7].value = outPolys
-      
-      # Unique ID (OBJECT/FID)
-      fldID = str(arcpy.Describe(inPolys).Fields[0].Name)
-      arcpy.AddField_management(inPolys, 'orfid', 'LONG','')
-      arcpy.CalculateField_management(inPolys, 'orfid', '!' + fldID + '!', 'PYTHON')
-      fldID = 'orfid'
       
       # Make a fresh copy of the data
       arcpy.CopyFeatures_management (inPolys, outPolys)
@@ -684,6 +690,11 @@ class AddInitFlds(object):
       printMsg('Species code field set to "%s".' % spCode)
       
       # table fid (object/fid)
+      a = arcpy.Describe(outPolys).Fields
+      for a1 in a:
+         if a1.Type == 'OID':
+            fldID = str(a1.Name)
+            break
       expression = "!%s!" % (fldID)
       arcpy.CalculateField_management (outPolys, fldSrcFID.Name, expression, 'PYTHON')
       printMsg('Unique ID field populated.')
@@ -847,8 +858,11 @@ class MergeData(object):
       
       arcpy.env.overwriteOutput = True
       
+      # get date
+      today = datetime.today().strftime('%Y%m%d')
+      
       inGDB = params[0].valueAsText
-      outPolysNm = str(arcpy.Describe(inGDB).name.replace('.gdb','')) + '_merged'
+      outPolysNm = str(arcpy.Describe(inGDB).name.replace('.gdb','')) + '_merged_' + today
       outPolys = str(inGDB) + os.sep + outPolysNm
       params[1].value = outPolys
       if params[2].value:
@@ -1029,7 +1043,12 @@ class GrpOcc(object):
       inPolys2 = scratchGDB + os.sep + 'inPolys'
       arcpy.Select_analysis(inPolys,inPolys2,fldUse.Name + ' = 1')
       # Unique ID (OBJECT/FID)
-      fldID = str(arcpy.Describe(inPolys2).Fields[0].Name)
+      a = arcpy.Describe(inPolys2).Fields
+      for a1 in a:
+         if a1.Type == 'OID':
+            fldID = str(a1.Name)
+            break
+      
       arcpy.CalculateField_management(inPolys2, fldFeatID.Name, '!' + fldID + '!', 'PYTHON')
       
       if params[1].value:
