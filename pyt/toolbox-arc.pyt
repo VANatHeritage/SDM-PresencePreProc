@@ -18,7 +18,8 @@ from datetime import datetime as datetime
 
 from arcpy.sa import *
 arcpy.CheckOutExtension("Spatial")
-scratchGDB = "in_memory"
+# scratchGDB = "in_memory"
+scratchGDB = r'C:/David/scratch/scratch_gdb.gdb'
 
 def countFeatures(features):
    '''Gets count of features'''
@@ -513,18 +514,46 @@ initDissList = [f.Name for f in initFields]
 #fldGrpUse = Field('grpUse', 'LONG', '') # Identifies highest quality records in group (1) versus all other records (0)
 # addFields = [fldRaScore, fldDateScore, fldPQI, fldGrpUse]
 
-# function to select (flow)lines using occurrences (for aquatics)
-#def GetLines(inPolys, inPolysID = 'sdm_featid', inLines, inLinesID = 'Permanent_Identifier', inAreas = [], tolerance = 1000):
+def fc2df(feature_class, field_list):
+   """
+   Load data into a Pandas Data Frame for subsequent analysis.
+   :param feature_class: Input ArcGIS Feature Class.
+   :param field_list: Fields for input.
+   :return: Pandas DataFrame object.
+   """
+   import pandas
+   from pandas import DataFrame
+   return DataFrame(
+      arcpy.da.FeatureClassToNumPyArray(
+         in_table=feature_class,
+         field_names=field_list,
+         skip_nulls=False,
+         null_value=-99999
+        )
+    )
 
-## WORKING
+def df2tab(df, outTable):
+   """
+   Create an ArcGIS table from a Pandas Data Frame (generally for joins)
+   :param df: Input pandas DataFrame
+   :param outTable: Name of output table
+   :return: outTable
+   """
+   import numpy as np
+   x = np.array(np.rec.fromrecords(df.values))
+   names = df.dtypes.index.tolist()
+   names = [str(n) for n in names]
+   x.dtype.names = tuple(names)
+   return arcpy.da.NumPyArrayToTable(x, outTable)
 
+## FUNCTIONS FOR TOOLBOX STARTS HERE
 class Toolbox(object):
    def __init__(self):
       self.label = "SDM Training Data Prep"
       self.alias = "sdmPresencePreProc"
       
       # List of tool classes associated with this toolbox (defined classes below)
-      self.tools = [AddInitFlds, MergeData, GrpOcc]
+      self.tools = [AddInitFlds, MergeData, GrpOcc, GetLines]
       
 class AddInitFlds(object):
    def __init__(self):
@@ -1089,3 +1118,210 @@ class GrpOcc(object):
       
       return outPolys
       
+# GetLines (for aquatics)
+      
+class GetLines(object):
+   def __init__(self):
+      self.label = "4. Select Lines by polygon occurrences"
+      self.description ="Takes a prepared polygon feature occurrence dataset " + \
+                        "and a lines feature class, with optional associated " + \
+                        "area feature classes, and associates lines with polygons." + \
+                        "At least one line will be associated to each polygon within " + \
+                        "the tolerance distance specified. The same line can get associated" + \
+                        "to multiple polygons."
+      self.canRunInBackground = True
+
+   def getParameterInfo(self):
+      """Define parameter definitions"""
+      inPolys = arcpy.Parameter(
+            displayName="Input Feature Occurrence Dataset (polygons)",
+            name="inPolys",
+            datatype="GPFeatureLayer",
+            parameterType="Required",
+            direction="Input")
+            
+      inLines = arcpy.Parameter(
+            displayName="Input Features (lines)",
+            name="inLines",
+            datatype="GPFeatureLayer",
+            parameterType="Required",
+            direction="Input")
+
+      inAreas = arcpy.Parameter(
+            displayName="List of input polygons feature classes associated with input line features (NHDArea and NHDWaterbody)",
+            name="inAreas",
+            datatype="GPFeatureLayer",
+            parameterType="Required",
+            direction="Input",
+            multiValue = True)
+            
+      outLines = arcpy.Parameter(
+            displayName = "Output feature class",
+            name = "outLines",
+            datatype = "DEFeatureClass",
+            parameterType = "Derived",
+            direction = "Output")
+            
+      inPolysID = arcpy.Parameter(
+            displayName = "Unique polygon ID field",
+            name = "inPolysID",
+            datatype = "GPString",
+            parameterType = "Required",
+            direction = "Input")
+            
+      inLinesID = arcpy.Parameter(
+            displayName = "Unique lines ID field",
+            name = "inLinesID",
+            datatype = "GPString",
+            parameterType = "Required",
+            direction = "Input")
+            
+      tolerance = arcpy.Parameter(
+            displayName = "Maximum distance tolerance",
+            name = "tolerance",
+            datatype = "GPString",
+            parameterType = "Required",
+            direction = "Input")
+            
+      inPolysID.parameterDependencies = [inPolys.name]
+      inLinesID.parameterDependencies = [inLines.name]
+      
+      params = [inPolys, inLines, inAreas, outLines, inPolysID, inLinesID, tolerance]
+      return params
+
+   def isLicensed(self):
+      """Check whether tool is licensed to execute."""
+      return True  # tool can be executed
+
+   def updateParameters(self, params):
+      """Modify the values and properties of parameters before internal
+      validation is performed.  This method is called whenever a parameter
+      has been changed. Example would be updating field list after a feature 
+      class was selected for a parameter."""
+      if params[0].value:
+         f1 = list()
+         for f in arcpy.ListFields(params[0].value):
+            f1.append(f.name)
+         if 'sdm_featid' in f1 and not params[4].altered:
+            params[4].filter.list = f1
+            params[4].value = 'sdm_featid'
+      if params[1].value:
+         f1 = list()
+         for f in arcpy.ListFields(params[1].value):
+            f1.append(f.name)
+         if 'Permanent_Identifier' in f1 and not params[5].altered:
+            params[5].filter.list = f1
+            params[5].value = 'Permanent_Identifier'
+      return
+      
+   def updateMessages(self, params):
+      """Modify the messages created by internal validation for each tool
+      parameter.  This method is called after internal validation."""
+      return
+
+   def execute(self, params, messages):
+      """The source code of the tool."""
+      import numpy as np
+      import pandas
+      from pandas import DataFrame
+      arcpy.env.workspace = scratchGDB
+      arcpy.env.overwriteOutput = True
+      
+      inPolys = params[0].valueAsText
+      inLines = params[1].valueAsText
+      inAreas = (params[2].valueAsText).split(';')
+      inPolysID = params[4].valueAsText
+      inLinesID = params[5].valueAsText
+      tolerance = params[6].valueAsText
+      
+      nms = arcpy.Describe(inPolys)
+      outLines = nms.path + os.sep + nms.name + '_lines'
+      params[3].value = outLines
+
+      lyr_all = scratchGDB + os.sep + 'all'
+      d = arcpy.CopyFeatures_management(inPolys, lyr_all)
+      
+      # get intersections (lines to polys)
+      printMsg('Finding intersecting lines by feature...')
+      inter = arcpy.Intersect_analysis([d, inLines])
+      df_inter = fc2df(inter, [inPolysID, inLinesID])
+      df_inter["type"] = '1_intersection'
+      df = df_inter.copy()
+      
+      # get all areawb intersections and associate a line
+      printMsg('Finding nearest line in intersecting area features...')
+      dl = arcpy.MakeFeatureLayer_management(lyr_all, 'lyr_all') # for first intersect
+      dl2 = arcpy.MakeFeatureLayer_management(lyr_all, 'lyr_all') # for tracking those polygons that intersect areas
+      alines = arcpy.MakeFeatureLayer_management(inLines, 'arealines')
+      area_wb = []
+      for a in inAreas:
+         a1 = arcpy.MakeFeatureLayer_management(a)
+         arcpy.SelectLayerByLocation_management(a1, "INTERSECT", dl) # get intersecting areas
+         if int(str(arcpy.GetCount_management(a1))) > 0:
+            arcpy.SelectLayerByLocation_management(alines, "COMPLETELY_WITHIN", a1, selection_type = "ADD_TO_SELECTION") # select lines within those areas
+            arcpy.SelectLayerByLocation_management(dl2, "INTERSECT", a1, selection_type = "ADD_TO_SELECTION") # select polys intersecting those areas
+            area_wb.extend(unique_values(a1, inLinesID))
+      
+      # get lines based on areawb selection, if any
+      if len(area_wb) > 0:
+         #str1 = '\',\''.join(area_wb)
+         #a1 = arcpy.MakeFeatureLayer_management(inLines, 'arealines') #, '"WBArea_Permanent_Identifier" in (\'' + str1 + '\')')
+      
+         # a1 is now lines intersecting the intersecting wbareas
+         # take subset that do not intersect an area boundary
+         # select all first (only necessary for the boundary touches method. Not using since it requires fixed id in 'a1 = ' step above
+         # arcpy.SelectLayerByAttribute_management(a1, "NEW_SELECTION")
+         #for a in inAreas:
+            #arcpy.SelectLayerByLocation_management(a1, "COMPLETELY_WITHIN", a, "#", "ADD_TO_SELECTION")
+            # arcpy.SelectLayerByLocation_management(a1, "BOUNDARY_TOUCHES", a, "#", "REMOVE_FROM_SELECTION")
+         
+         # spatial join closest (no limit on distance, since these polys already intersect an area feature)
+         near_area_wb = arcpy.SpatialJoin_analysis(dl2, alines, scratchGDB + os.sep + 'sj_wb', join_operation="JOIN_ONE_TO_ONE", join_type="KEEP_COMMON", match_option="CLOSEST")
+         df_near_area_wb = fc2df(near_area_wb, [inPolysID, inLinesID])
+         df_near_area_wb["type"] = "2_nearest_sameareawb"
+         df = df.append(df_near_area_wb)
+      
+      # make layer from polys including only non-intersecting
+      # intersecting do not need further work
+      inter_set = list(set(list(df[inPolysID])))
+      inter_set = [str(x) for x in inter_set]
+      str1 = ','.join(inter_set)
+      dl = arcpy.MakeFeatureLayer_management(lyr_all, 'lyr_all', '"' + inPolysID + '" not in (' + str1 + ')')
+      
+      # get those within a distance
+      if int(str(arcpy.GetCount_management(dl))) > 0:
+         printMsg('Finding lines within search tolerance...')
+         near = arcpy.SpatialJoin_analysis(dl, inLines, scratchGDB + os.sep + 'sj', join_operation="JOIN_ONE_TO_MANY", join_type="KEEP_ALL", match_option="WITHIN_A_DISTANCE", search_radius = tolerance)
+         df_near = fc2df(near, [inPolysID, inLinesID])
+         df_near["type"] = "3_nearest"
+         # final df merge
+         df = df.append(df_near)
+      
+      df2 = df.groupby([inPolysID, inLinesID]).size().reset_index(name='Score')
+      
+      # df to table
+      dftab = scratchGDB + os.sep + 'jointab'
+      arcpy.Delete_management(dftab)
+      df2tab(df2, dftab)
+      
+      # table version of inPolys
+      arcpy.CopyRows_management(d, "inPolysTab")
+      printMsg('Joining lines with polygon table...')
+      
+      # copy inLinesID, geom, joining all inPolys data
+      str1 = '\',\''.join(list(df2[inLinesID]))
+      outl = arcpy.MakeFeatureLayer_management(inLines, 'lines2', inLinesID + ' in (\'' + str1 + '\')')
+      linesel = arcpy.CopyFeatures_management(outl, "outl")
+      
+      fieldList = [['outl.' + inLinesID, inLinesID],['jointab.'  + inPolysID, inPolysID], ['outl.Shape', 'Shape']]
+      where = "outl." + inLinesID  + " = jointab." + inLinesID
+      
+      # join poly ids to selected lines
+      arcpy.MakeQueryTable_management([linesel,'jointab'], "bla", in_field = fieldList, where_clause = where)
+      arcpy.CopyFeatures_management("bla", "test_out")
+      
+      # join original poly info
+      arcpy.MakeQueryTable_management(['test_out','inPolysTab'], "bla2", where_clause = 'test_out.' + inPolysID + ' = inPolysTab.' + inPolysID)
+      arcpy.CopyFeatures_management("bla2", outLines)
+      printMsg('File ' + outLines + ' created.')
+      return outLines

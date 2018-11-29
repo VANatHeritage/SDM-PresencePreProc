@@ -78,6 +78,13 @@ The resulting file from step 4 will have spatial duplicates identified, in the `
   - If you put in a distance and a network dataset, automatic grouping by separation distance along the network will be used (e.g. for aquatic species)
 - The output dataset will have `sdm_featid` and `sdm_grpid` populated. It will print a warning if there are empty `sdm_grpid` values. This will likely only be the case if you copied over from `src_grpid`, and had empty values in that column.
 
+#### 7. Tag lines based on polygons [optional for aquatics]
+
+- Use the tool **4. Select Lines by polygon occurrences** to create a new lines feature class, with lines attributed with the related feature occurrence
+- Use the output from the grouping tool as the input polygons
+- Lines will be duplicated if they relate to more than one occurrence
+- The tool may pick up more reaches than desired - use the `sdm_use` column to set these to `0`, so they will not be used in the model
+
 ---
 
 
