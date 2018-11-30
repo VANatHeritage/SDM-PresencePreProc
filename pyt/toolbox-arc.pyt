@@ -18,8 +18,7 @@ from datetime import datetime as datetime
 
 from arcpy.sa import *
 arcpy.CheckOutExtension("Spatial")
-# scratchGDB = "in_memory"
-scratchGDB = r'C:/David/scratch/scratch_gdb.gdb'
+scratchGDB = arcpy.env.scratchGDB
 
 def countFeatures(features):
    '''Gets count of features'''
@@ -221,7 +220,7 @@ def SpatialClusterNetwork(inFeats, sepDist, network, barriers = "#", fldGrpID = 
    
    sd0 = sepDist.split(" ")
    if len(sd0) == 2:
-      # sepDist = str(int(sd0[0])/2 - 1) + " " + sd0[1] # cannot handle unit text
+      # sepDist = str(int(sd0[0])/2 - 1) + " " + sd0[1] # cannot handle units text
       sepDist = str(int(sd0[0])/2 - 1)
    else:
       sepDist = str(int(sd0[0])/2 - 1)
@@ -1317,11 +1316,34 @@ class GetLines(object):
       where = "outl." + inLinesID  + " = jointab." + inLinesID
       
       # join poly ids to selected lines
-      arcpy.MakeQueryTable_management([linesel,'jointab'], "bla", in_field = fieldList, where_clause = where)
-      arcpy.CopyFeatures_management("bla", "test_out")
+      arcpy.MakeQueryTable_management([linesel,'jointab'], "lines0", in_field = fieldList, where_clause = where)
+      arcpy.CopyFeatures_management("lines0", "lines0_feat")
       
       # join original poly info
-      arcpy.MakeQueryTable_management(['test_out','inPolysTab'], "bla2", where_clause = 'test_out.' + inPolysID + ' = inPolysTab.' + inPolysID)
-      arcpy.CopyFeatures_management("bla2", outLines)
+      arcpy.MakeQueryTable_management(['lines0_feat','inPolysTab'], "lines1", where_clause = 'lines0_feat.' + inPolysID + ' = inPolysTab.' + inPolysID)
+      arcpy.CopyFeatures_management("lines1", outLines)
+      arcpy.DeleteIdentical_management(outLines, fields="Shape;" + inLinesID + ";" + fldGrpID.Name)
+      
+      # re-grouping procedure for groups that share a line
+      arcpy.Frequency_analysis(outLines, "freq", frequency_fields=inLinesID)
+      sums = unique_values('freq', 'FREQUENCY')
+      if len(sums) > 1:
+         grps0 = max(unique_values(outLines, fldGrpID.Name))
+         layer = arcpy.MakeFeatureLayer_management(outLines)
+         # update sdm_grpid for the groups which share a line
+         with arcpy.da.SearchCursor("freq", ['FREQUENCY', inLinesID]) as sc:
+            for row in sc:
+               if row[0] > 1:
+                  grps1 = grps0 + 1 # new group number
+                  grps0 = grps1 # for next time
+                  arcpy.SelectLayerByAttribute_management(layer, "NEW_SELECTION", '"' + inLinesID + '" = ' + "'" + str(row[1]) + "'") # select lines by id
+                  uv = ','.join([str(s) for s in unique_values(layer, fldGrpID.Name)])
+                  arcpy.SelectLayerByAttribute_management(layer, "NEW_SELECTION", '"' + fldGrpID.Name + '" IN (' + uv + ')') # select lines by group
+                  arcpy.CalculateField_management(layer, fldGrpID.Name, grps1, "PYTHON")
+                  printMsg('Groups (' + uv + ') combined into one group (' + str(grps1) + ').')
+         arcpy.SelectLayerByAttribute_management(layer, "CLEAR_SELECTION")
+         arcpy.DeleteIdentical_management(outLines, fields="Shape;" + inLinesID)
+      # end re-grouping
+      
       printMsg('File ' + outLines + ' created.')
       return outLines

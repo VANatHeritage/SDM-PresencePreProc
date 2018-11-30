@@ -82,8 +82,9 @@ The resulting file from step 4 will have spatial duplicates identified, in the `
 
 - Use the tool **4. Select Lines by polygon occurrences** to create a new lines feature class, with lines attributed with the related feature occurrence
 - Use the output from the grouping tool as the input polygons
-- Lines will be duplicated if they relate to more than one occurrence
-- The tool may pick up more reaches than desired - use the `sdm_use` column to set these to `0`, so they will not be used in the model
+- Duplicate lines are removed
+  - If the same line is related to occurrences in multiple groups, those groups are combined into one new group
+- After running, use the `sdm_use` column to set reaches that should not be included in the model to `0`.
 
 ---
 
