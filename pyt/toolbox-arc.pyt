@@ -32,7 +32,7 @@ from datetime import datetime as datetime
 from arcpy.sa import *
 from arcpy.na import *
 arcpy.CheckOutExtension("Spatial")
-#scratchGDB = arcpy.env.scratchGDB
+# scratchGDB = r'C:\David\scratch\sdmPresencePreProc.gdb'
 scratchGDB = "in_memory"
 
 
@@ -1194,7 +1194,7 @@ class MergeData(object):
 class GrpOcc(object):
    def __init__(self):
       self.label = "3. Finalize/Group occurrences"
-      self.description ="Groups occurrences in a merged feature occurrence dataset," + \
+      self.description ="Groups occurrences in a merged feature occurrence dataset, " + \
                         "using a seperation distance, optionally across a defined network. " + \
                         "Only points with a sdm_use value of 1 are used."
       self.canRunInBackground = True
