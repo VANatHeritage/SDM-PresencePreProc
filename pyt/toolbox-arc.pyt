@@ -9,16 +9,32 @@ Created on Thu May 10 11:52:23 2018
 # is internal functions and field definitions
 
 # TODOS (list by priority; remove when added)
-# add datestamp [yyyymmdd] to merged files; still allow overwrite
+# in line selection SpatialClusterNetwork, could choose highest RA/latest date for line/poly associations
 # sep. dists., other info. could be stored in a metadata table
+# Aquatic grouping tool:
+"""
+1. updates sdm_grp_id
+2. Returns table of [unique COMID], feat occur attributes, [line geom], score, etc.
+   - figure out how to select which feat occur attaches to which line (maybe just latest date of all related, or highest score).
+3. update sdm_grp_id if necessary (if two groups share a line)
+4. update sdm_use best as possible
+
+overall need = GetLinesSimple integrate into grouping network - maybe just update with SDM_Tools from PA group.
+
+Network should be NHDPlusv2
+- possibly remove strord == 1
+"""
 
 import arcpy
-import os, sys, traceback, re
+import os, sys, traceback, re, pandas
 from datetime import datetime as datetime
 
 from arcpy.sa import *
+from arcpy.na import *
 arcpy.CheckOutExtension("Spatial")
-scratchGDB = arcpy.env.scratchGDB
+#scratchGDB = arcpy.env.scratchGDB
+scratchGDB = "in_memory"
+
 
 def countFeatures(features):
    '''Gets count of features'''
@@ -199,7 +215,7 @@ def SpatialCluster (inFeats, sepDist, fldGrpID = 'grpID'):
    
 
 # internal spatial clustering function over network dataset
-def SpatialClusterNetwork(inFeats, sepDist, network, barriers = "#", fldGrpID = 'grpID'):
+def SpatialClusterNetwork_old(inFeats, sepDist, network, barriers = "#", fldGrpID = 'grpID'):
    '''Clusters features based on specified search distance across a linear network dataset.
    Features within the search distance of each other will be assigned to the same group.
    inFeats = The input features to group
@@ -251,7 +267,7 @@ def SpatialClusterNetwork(inFeats, sepDist, network, barriers = "#", fldGrpID = 
    #facil = arcpy.Merge_management([facil1, facil2], scratchGDB + os.sep + 'facil', field_mappings="""temp_join_id "temp_join_id" true true false 4 Long 0 0 ,First,#,facil1,temp_join_id,-1,-1,facil2,temp_join_id,-1,-1""")
    
    # generate facilities using intersections of network + feature edges
-   netlines = str(network).replace("HydroNet_ND","NHDFlowline") # NHDFlowline is a is a fixed name, the lines that make up the network dataset.
+   netlines = str(network).replace(os.path.basename(network),"NHDFlowline_Network") # NHDFlowline_Network is a is a fixed name, the lines that make up the network dataset. Stored in same Feature Dataset as ND
    printMsg("Generating facilities at intersections with network...")
    facil2 = arcpy.PolygonToLine_management(in_features=inFeats, out_feature_class= scratchGDB + os.sep + 'facil2')
    facil3 = arcpy.Intersect_analysis([netlines,facil2], scratchGDB + os.sep + 'facil3', output_type = "POINT")
@@ -311,6 +327,196 @@ def SpatialClusterNetwork(inFeats, sepDist, network, barriers = "#", fldGrpID = 
    arcpy.DeleteField_management(inFeats, "temp_join_id")
    
    return inFeats
+
+# internal spatial clustering function over network dataset
+def SpatialClusterNetwork(software, species_pt, species_ln, species_py, flowlines, catchments, network, dams, sep_dist, snap_dist, output_lines):
+   '''Clusters features based on specified search distance across a linear network dataset.
+   Features within the search distance of each other will be assigned to the same group.
+   inFeats = The input features to group
+   sepDist = The distance with which to group features
+   Adapted from script by Molly Moore, PANHP'''
+   
+   # env and extensions
+   arcpy.env.workspace = scratchGDB
+   arcpy.CheckOutExtension("Network")
+   arcpy.env.qualifiedFieldNames = False
+   
+   # create empty list to store converted point layers for future merge
+   species_lyrs = []
+
+   # convert multipart points to singlepart
+   if species_pt:
+      pts = arcpy.MultipartToSinglepart_management(species_pt, "pts")
+      species_lyrs.append(pts)
+
+   # convert line and polygon data to vertices
+   if species_ln:
+      lns = arcpy.FeatureVerticesToPoints_management(species_ln,"lns", "ALL")
+      species_lyrs.append(lns)
+
+   if species_py:
+      pys = arcpy.FeatureVerticesToPoints_management(species_py,"polys", "ALL")
+      species_lyrs.append(pys)
+
+   # merge the point layers together
+   species_pt = arcpy.Merge_management(species_lyrs,"species_pt")
+
+   #calculate separation distance to be used in tools. use half of original minus
+   #1 to account for 1 meter buffer and overlapping buffers
+   sep_dist = int(sep_dist)
+   sep_dist = (sep_dist/2)-2
+
+   #create temporary unique id for use in join field later
+   i=1
+   fieldnames = [field.name for field in arcpy.ListFields(species_pt)]
+   if 'temp_join_id' not in fieldnames:
+      arcpy.AddField_management(species_pt,"temp_join_id","LONG")
+      with arcpy.da.UpdateCursor(species_pt,"temp_join_id") as cursor:
+          for row in cursor:
+              row[0] = i
+              cursor.updateRow(row)
+              i+=1
+
+   #delete identical points with tolerance to increase speed
+   arcpy.DeleteIdentical_management(species_pt,[fldFeatID.Name, "Shape"],"35 Meters")
+
+   arcpy.AddMessage("Creating service area line layer")
+   #create service area line layer
+   service_area_lyr = arcpy.na.MakeServiceAreaLayer(network,"service_area_lyr","Length","TRAVEL_FROM",sep_dist,polygon_type="NO_POLYS",line_type="TRUE_LINES",overlap="OVERLAP")
+   service_area_lyr = service_area_lyr.getOutput(0)
+   subLayerNames = arcpy.na.GetNAClassNames(service_area_lyr)
+   facilitiesLayerName = subLayerNames["Facilities"]
+   serviceLayerName = subLayerNames["SALines"]
+   arcpy.na.AddLocations(service_area_lyr, facilitiesLayerName, species_pt, "", snap_dist)
+   arcpy.na.Solve(service_area_lyr)
+   if software.lower() == "arcmap":
+      lines = arcpy.mapping.ListLayers(service_area_lyr,serviceLayerName)[0]
+   if software.lower() == "arcgis pro":
+      lines = service_area_lyr.listLayers(serviceLayerName)[0]
+   flowline_clip = arcpy.CopyFeatures_management(lines,"service_area")
+
+   arcpy.AddMessage("Buffering service area flowlines")
+   #buffer clipped service area flowlines by 1 meter
+   flowline_buff = arcpy.Buffer_analysis(flowline_clip,"flowline_buff","1 Meter","FULL","ROUND")
+
+   arcpy.AddMessage("Dissolving service area polygons")
+   #dissolve flowline buffers
+   flowline_diss = arcpy.Dissolve_management(flowline_buff,"flowline_diss",multi_part="SINGLE_PART")
+
+   #separate buffered flowlines at dams
+   if dams:
+      #buffer dams by 1.1 meters
+      dam_buff = arcpy.Buffer_analysis(dams,"dam_buff","1.1 Meter","FULL","FLAT")
+      #split flowline buffers at dam buffers by erasing area of dam
+      flowline_erase = arcpy.Erase_analysis(flowline_diss,dam_buff,"flowline_erase")
+      multipart_input = flowline_erase
+   else:
+      multipart_input = flowline_diss
+
+   #multi-part to single part to create unique polygons
+   single_part = arcpy.MultipartToSinglepart_management(multipart_input,"single_part")
+
+
+   #create unique group id
+   group_id = fldGrpID.Name # unique to this toolbox
+   arcpy.AddField_management(single_part,group_id,"LONG")
+   num = 1
+   with arcpy.da.UpdateCursor(single_part,group_id) as cursor:
+      for row in cursor:
+          row[0] = num
+          cursor.updateRow(row)
+          num+=1
+
+   #join group id of buffered flowlines to closest points
+   s_join = arcpy.SpatialJoin_analysis(target_features=species_pt, join_features=single_part, out_feature_class="s_join", join_operation="JOIN_ONE_TO_ONE", join_type="KEEP_ALL", match_option="CLOSEST", search_radius=snap_dist, distance_field_name="")
+   #join field to original dataset
+   join_field = [field.name for field in arcpy.ListFields(s_join)]
+   join_field = join_field[-1]
+   arcpy.JoinField_management(species_pt,"temp_join_id",s_join,"temp_join_id",join_field)
+
+   #delete null groups to get rid of observations that were beyond snap_dist
+   with arcpy.da.UpdateCursor(species_pt,join_field) as cursor:
+      for row in cursor:
+          if row[0] is None:
+              cursor.deleteRow()
+
+   arcpy.AddMessage("Joining COMID")
+   #join species_pt layer with catchments to assign COMID
+   sp_join = arcpy.SpatialJoin_analysis(species_pt,catchments,"sp_join","JOIN_ONE_TO_ONE","KEEP_COMMON","","INTERSECT")
+   sp_join = arcpy.DeleteIdentical_management(sp_join,[group_id,"FEATUREID"])
+   if len(arcpy.ListFields(sp_join,"COMID")) == 0:
+      arcpy.AddField_management(sp_join,"COMID","LONG")
+      with arcpy.da.UpdateCursor(sp_join,["FEATUREID","COMID"]) as cursor:
+          for row in cursor:
+              row[1] = str(row[0])
+              cursor.updateRow(row)
+
+   #obtain list of duplicate COMID because these are reaches assigned to multiple groups
+   freq = arcpy.Frequency_analysis(sp_join,"freq","COMID")
+   dup_comid = []
+   with arcpy.da.SearchCursor(freq,["FREQUENCY","COMID"]) as cursor:
+      for row in cursor:
+          if row[0] > 1:
+              dup_comid.append(row[1])
+
+   arcpy.AddMessage("Resolving same reaches assigned to different groups")
+   #get all groups within duplicate reaches and assign them to a single group
+   sp_join_lyr = arcpy.MakeFeatureLayer_management(sp_join,"sp_join_lyr")
+   if dup_comid:
+      for dup in dup_comid:
+          arcpy.SelectLayerByAttribute_management(sp_join_lyr,"NEW_SELECTION","COMID = {0}".format(dup))
+          combine_groups = []
+          with arcpy.da.SearchCursor(sp_join_lyr,[group_id]) as cursor:
+              for row in cursor:
+                  combine_groups.append(row[0])
+          arcpy.SelectLayerByAttribute_management(sp_join_lyr,"NEW_SELECTION",fldGrpID.Name + " IN ({0})".format(','.join(str(x) for x in combine_groups)))
+          with arcpy.da.UpdateCursor(sp_join_lyr,[group_id]) as cursor:
+              for row in cursor:
+                  row[0] = num
+                  cursor.updateRow(row)
+          num += 1
+
+   #clear selection on layer
+   arcpy.SelectLayerByAttribute_management(sp_join_lyr,"CLEAR_SELECTION")
+
+   #get list of COMID values for export of flowlines
+   with arcpy.da.SearchCursor(sp_join_lyr,"COMID") as cursor:
+      comid = sorted({row[0] for row in cursor})
+   comid = list(set(comid))
+
+   #join attributes to flowlines
+   expression = 'COMID IN ({0})'.format(','.join(str(x) for x in comid))
+   flowlines_lyr = arcpy.MakeFeatureLayer_management(flowlines,"flowlines_lyr",expression)
+   arcpy.AddJoin_management(flowlines_lyr,"COMID",sp_join,"COMID")
+
+   arcpy.env.qualifiedFieldNames = False
+   
+   # export presence flowlines
+   flowlines_lyr = arcpy.CopyFeatures_management(flowlines_lyr,"flowlines_lyr")
+   # reduce fields
+   myfields = ['COMID','FEATUREID','SOURCEFC'] + initDissList
+   # create an empty field mapping object
+   mapS = arcpy.FieldMappings()
+   # for each field, create an individual field map, and add it to the field mapping object
+   for field in myfields :
+      arcpy.AddMessage("field: " + field)
+      try:
+         map = arcpy.FieldMap()
+         map.addInputField(flowlines_lyr, field)
+         mapS.addFieldMap(map)
+      except:
+         next
+   arcpy.FeatureClassToFeatureClass_conversion(flowlines_lyr, os.path.dirname(output_lines), os.path.basename(output_lines), "#", mapS)
+   
+   # append group IDs to original datasets
+   if species_py:
+      species_pt = arcpy.DeleteIdentical_management(species_pt, [fldFeatID.Name, group_id])
+      JoinFields(species_py, fldFeatID.Name, species_pt, fldFeatID.Name, [fldGrpID.Name])
+   
+   #delete temporary fields and datasets
+   # arcpy.Delete_management("in_memory")
+   return species_py
+
 
 def tbackInLoop():
    '''Standard error handling routing to add to bottom of scripts'''
@@ -502,7 +708,7 @@ fldGrpID = Field('sdm_grpid', 'TEXT', 50) # new unique id by group
 # fldComments = Field('revComments', 'TEXT', 250) # Field for review/editing comments; dropping in favor of UseWhy
 
 initFields = [fldSpCode, fldSrcTab, fldSrcFID, fldSFID, fldEOID, fldUse, fldUseWhy, fldDateCalc, fldDateFlag, fldRA, fldSFRACalc, fldRAFlag, fldFeatID, fldGrpID] 
-initDissList = [f.Name for f in initFields] 
+initDissList = [f.Name for f in initFields]
 
 # not using these
 # fldIsDup, fldRev, fldComments
@@ -513,7 +719,7 @@ initDissList = [f.Name for f in initFields]
 #fldGrpUse = Field('grpUse', 'LONG', '') # Identifies highest quality records in group (1) versus all other records (0)
 # addFields = [fldRaScore, fldDateScore, fldPQI, fldGrpUse]
 
-def fc2df(feature_class, field_list):
+def fc2df(feature_class, field_list, skip_nulls = True):
    """
    Load data into a Pandas Data Frame for subsequent analysis.
    :param feature_class: Input ArcGIS Feature Class.
@@ -522,14 +728,24 @@ def fc2df(feature_class, field_list):
    """
    import pandas
    from pandas import DataFrame
-   return DataFrame(
-      arcpy.da.FeatureClassToNumPyArray(
-         in_table=feature_class,
-         field_names=field_list,
-         skip_nulls=False,
-         null_value=-99999
-        )
-    )
+   if not skip_nulls:
+      return DataFrame(
+         arcpy.da.FeatureClassToNumPyArray(
+            in_table=feature_class,
+            field_names=field_list,
+            skip_nulls=False,
+            null_value=-99999
+         )
+      )
+   else:
+      return DataFrame(
+         arcpy.da.FeatureClassToNumPyArray(
+            in_table=feature_class,
+            field_names=field_list,
+            skip_nulls=True
+         )
+      )
+
 
 def df2tab(df, outTable):
    """
@@ -552,7 +768,7 @@ class Toolbox(object):
       self.alias = "sdmPresencePreProc"
       
       # List of tool classes associated with this toolbox (defined classes below)
-      self.tools = [AddInitFlds, MergeData, GrpOcc, GetLines]
+      self.tools = [AddInitFlds, MergeData, GrpOcc]
       
 class AddInitFlds(object):
    def __init__(self):
@@ -1026,9 +1242,17 @@ class GrpOcc(object):
             datatype="DEFeatureClass",
             parameterType="Derived",
             direction="Output")
+      
+      tolerance = arcpy.Parameter(
+            displayName = "Maximum distance tolerance",
+            name = "tolerance",
+            datatype = "GPString",
+            parameterType = "Required",
+            direction = "Input")
+      tolerance.value = "100"
             
       grpFld.parameterDependencies = [inPolys.name]
-      params = [inPolys,sepDist,grpFld,network,barriers,outPolys]
+      params = [inPolys,sepDist,grpFld,network,barriers,outPolys,tolerance]
       return params
 
    def isLicensed(self):
@@ -1065,6 +1289,7 @@ class GrpOcc(object):
       # get source table name
       d = arcpy.Describe(inPolys)
       outPolys = d.path + os.sep + d.name + '_forSDM'
+      outLines = outPolys + '_lines'
       params[5].value = outPolys
       
       # take use = 1 subset
@@ -1100,12 +1325,20 @@ class GrpOcc(object):
             # network analyst
             printMsg("Using network grouping with distance of " + str(sepDist))
             network = params[3].valueAsText
+            tolerance = params[6].valueAsText
             # feature to point
             # inPt = arcpy.FeatureToPoint_management(in_features=inPolys2, out_feature_class= scratchGDB + os.sep + 'facil', point_location="INSIDE")
             arcpy.DeleteField_management(inPolys2, grpFld)
-            inPolys2 = SpatialClusterNetwork(inPolys2, sepDist, network, barriers, grpFld)
-            # join group values to original using original FIDs
-            # JoinFields(inPolys2, fldID, inPt, fldID, [grpFld])
+            # inPolys2 = SpatialClusterNetwork(inPolys2, sepDist, network, barriers, grpFld) # old call
+            
+            # fixed names in network gdb
+            flowlines = os.path.dirname(network) + os.sep + 'NHDFlowline_Network'
+            catchments = os.path.dirname(os.path.dirname(network)) + os.sep + 'Catchment'
+            # fn from PANHP
+            inPolys2 = SpatialClusterNetwork(software = "ArcMap", species_pt = None, species_ln = None, species_py = inPolys2, 
+               flowlines = flowlines, catchments = catchments, network = network, dams = barriers, 
+               sep_dist = sepDist, snap_dist = tolerance, output_lines = outLines)
+            # returns inPolys2 with group ID column populated
       else:
          # just update column from src_grpid
          arcpy.CalculateField_management(inPolys2, fldGrpID.Name, '!' + fldEOID.Name + '!', 'PYTHON')
@@ -1124,10 +1357,9 @@ class GetLines(object):
       self.label = "4. Select Lines by polygon occurrences"
       self.description ="Takes a prepared polygon feature occurrence dataset " + \
                         "and a lines feature class, with optional associated " + \
-                        "area feature classes, and associates lines with polygons." + \
-                        "At least one line will be associated to each polygon within " + \
-                        "the tolerance distance specified. The same line can get associated" + \
-                        "to multiple polygons."
+                        "area feature classes, and associates lines with polygons. " + \
+                        "At least one line will be associated to each polygon if " + \
+                        "lines are within the tolerance distance specified."
       self.canRunInBackground = True
 
    def getParameterInfo(self):
@@ -1243,9 +1475,11 @@ class GetLines(object):
       # get intersections (lines to polys)
       printMsg('Finding intersecting lines by feature...')
       inter = arcpy.Intersect_analysis([d, inLines])
-      df_inter = fc2df(inter, [inPolysID, inLinesID])
-      df_inter["type"] = '1_intersection'
-      df = df_inter.copy()
+      df = DataFrame(columns = [inPolysID, inLinesID, 'type'])
+      if int(str(arcpy.GetCount_management(inter))) > 0:
+         df_inter = fc2df(inter, [inPolysID, inLinesID])
+         df_inter["type"] = '1_intersection'
+         df = df.append(df_inter)
       
       # get all areawb intersections and associate a line
       printMsg('Finding nearest line in intersecting area features...')
@@ -1276,7 +1510,7 @@ class GetLines(object):
          
          # spatial join closest (no limit on distance, since these polys already intersect an area feature)
          near_area_wb = arcpy.SpatialJoin_analysis(dl2, alines, scratchGDB + os.sep + 'sj_wb', join_operation="JOIN_ONE_TO_ONE", join_type="KEEP_COMMON", match_option="CLOSEST")
-         df_near_area_wb = fc2df(near_area_wb, [inPolysID, inLinesID])
+         df_near_area_wb = fc2df(near_area_wb, [inPolysID, inLinesID], True)
          df_near_area_wb["type"] = "2_nearest_sameareawb"
          df = df.append(df_near_area_wb)
       
@@ -1346,4 +1580,170 @@ class GetLines(object):
       # end re-grouping
       
       printMsg('File ' + outLines + ' created.')
+      return outLines
+
+
+class GetLinesSimple(object):
+   def __init__(self):
+      self.label = "4. Select Lines by polygon occurrences"
+      self.description ="Takes a prepared polygon feature occurrence dataset " + \
+                        "and a lines feature class, and associates lines with polygons. " + \
+                        "All lines within tolerance distance will be returned, and " + \
+                        "at least one line will be selected for each occurrence."
+      self.canRunInBackground = True
+
+   def getParameterInfo(self):
+      """Define parameter definitions"""
+      inPolys = arcpy.Parameter(
+            displayName="Input Feature Occurrence Dataset (polygons)",
+            name="inPolys",
+            datatype="GPFeatureLayer",
+            parameterType="Required",
+            direction="Input")
+            
+      inLines = arcpy.Parameter(
+            displayName="Input Features (lines)",
+            name="inLines",
+            datatype="GPFeatureLayer",
+            parameterType="Required",
+            direction="Input")
+            
+      outLines = arcpy.Parameter(
+            displayName = "Output feature class",
+            name = "outLines",
+            datatype = "DEFeatureClass",
+            parameterType = "Derived",
+            direction = "Output")
+            
+      tolerance = arcpy.Parameter(
+            displayName = "Maximum distance tolerance",
+            name = "tolerance",
+            datatype = "GPString",
+            parameterType = "Required",
+            direction = "Input")
+      
+      inLinesID = arcpy.Parameter(
+            displayName = "Unique lines ID field",
+            name = "inLinesID",
+            datatype = "GPString",
+            parameterType = "Required",
+            direction = "Input")
+      
+      params = [inPolys, inLines, outLines, tolerance, inLinesID]
+      return params
+
+   def isLicensed(self):
+      """Check whether tool is licensed to execute."""
+      return True  # tool can be executed
+
+   def updateParameters(self, params):
+      """Modify the values and properties of parameters before internal
+      validation is performed.  This method is called whenever a parameter
+      has been changed. Example would be updating field list after a feature 
+      class was selected for a parameter."""
+      if params[1].value or params[1].altered:
+         f1 = list()
+         for f in arcpy.ListFields(params[1].value):
+            f1.append(f.name)
+         params[4].filter.list = f1
+         if 'Permanent_Identifier' in f1 and not params[4].altered:
+            params[4].value = 'Permanent_Identifier'
+      return
+      
+   def updateMessages(self, params):
+      """Modify the messages created by internal validation for each tool
+      parameter.  This method is called after internal validation."""
+      return
+
+   def execute(self, params, messages):
+      """The source code of the tool."""
+      
+      inPolys = params[0].valueAsText
+      inLines = params[1].valueAsText
+      tolerance = params[3].valueAsText
+      inLinesID = params[4].valueAsText
+      
+      nms = arcpy.Describe(inPolys)
+      outLines = nms.path + os.sep + nms.name + '_lines'
+      params[2].value = outLines
+      
+      arcpy.env.workspace = scratchGDB
+      arcpy.env.overwriteOutput = True
+      arcpy.env.outputCoordinateSystem = inPolys
+      
+      tol_dist = tolerance.split(" ")[0]
+      
+      a = arcpy.Describe(inLines).Fields
+      for a1 in a:
+         if a1.Type == 'OID':
+            linesOID = str(a1.Name)
+            break
+      
+      if not outLines:
+         nms = arcpy.Describe(inPolys)
+         outLines = nms.path + os.sep + nms.name + '_lines'
+
+      lyr_all = scratchGDB + os.sep + 'allpoly'
+      d = arcpy.CopyFeatures_management(inPolys, lyr_all)
+      
+      # score lines using point relationships
+      lyr_line = arcpy.MakeFeatureLayer_management(inLines, 'lyr_line')
+      lyr_poly = arcpy.MakeFeatureLayer_management(lyr_all, 'lyr_poly')
+      
+      # dissolve polys
+      printMsg('Scoring lines...')
+      p1 = arcpy.Dissolve_management(lyr_poly, "p1",  dissolve_field="", statistics_fields="", multi_part="SINGLE_PART", unsplit_lines="DISSOLVE_LINES")
+      p1_line = arcpy.PolygonToLine_management(p1, "p1_line", neighbor_option="IGNORE_NEIGHBORS")
+      p2 = arcpy.Buffer_analysis(lyr_poly, "p2", buffer_distance_or_field=tolerance)
+      
+      # clip lines (after selecting those within tolerance)
+      l1_poly = arcpy.MakeFeatureLayer_management(p1, 'p1')
+      arcpy.SelectLayerByLocation_management(lyr_line, "WITHIN_A_DISTANCE", p1, tolerance, "NEW_SELECTION")
+      l1 = arcpy.Clip_analysis(lyr_line, p2, 'l1')
+      arcpy.AddField_management(l1, "slength", "FLOAT")
+      arcpy.CalculateField_management(l1, "slength", '!shape.length@meters!', "PYTHON")
+      
+      # get statistics on lines
+      line_pts = arcpy.FeatureVerticesToPoints_management(l1, 'line_pts', point_location="ALL")
+      arcpy.Near_analysis(line_pts, p1_line, search_radius="", location="NO_LOCATION", angle="NO_ANGLE", method="PLANAR")
+      line_pts_summ = arcpy.Statistics_analysis(line_pts, out_table='line_pts_summ', statistics_fields="NEAR_DIST STD;NEAR_DIST MEAN;NEAR_DIST RANGE", case_field= inLinesID + ";slength")
+      
+      # calculate score
+      arcpy.AddField_management(line_pts_summ, 'score', 'FLOAT')
+      arcpy.CalculateField_management(line_pts_summ, 'score',  expression= "(" + tol_dist + " - (!MEAN_NEAR_DIST! * (!STD_NEAR_DIST! / !slength!))) / " + tol_dist, expression_type="PYTHON", code_block="")
+      # arcpy.CalculateField_management(line_pts_summ, 'score',  expression= "(" + tol_dist + " - (!MEAN_NEAR_DIST! * (!RANGE_NEAR_DIST! / !slength!))) / " + tol_dist, expression_type="PYTHON", code_block="")
+      
+      # output lines
+      outLines = arcpy.CopyFeatures_management(lyr_line, out_feature_class= outLines)
+      arcpy.JoinField_management(outLines, inLinesID, line_pts_summ, inLinesID, fields="slength;score")
+      
+      # calculate a threshold (minimum of the [maximum scores by original feature within tolerance distance])
+      inpoly_sj = arcpy.SpatialJoin_analysis(inPolys, outLines, "inpoly_sj", "JOIN_ONE_TO_MANY","KEEP_COMMON", match_option="WITHIN_A_DISTANCE", search_radius= tolerance)
+      inpoly_max = arcpy.Statistics_analysis(inpoly_sj, "inpoly_max", statistics_fields="score MAX", case_field= fldFeatID.Name)
+      thresh = min(unique_values(inpoly_max, "MAX_score"))
+      printMsg("Using a threshold of score >= " + str(thresh) + "...")
+      
+      # new layer to select closest by original polygons
+      outlines1 = arcpy.MakeFeatureLayer_management(outLines)
+      p1 = arcpy.MakeFeatureLayer_management(p1)
+      arcpy.SelectLayerByLocation_management(p1, "WITHIN_A_DISTANCE", lyr_line, tolerance, invert_spatial_relationship = "INVERT")
+      arcpy.SelectLayerByLocation_management(lyr_poly, "INTERSECT", p1, selection_type = "NEW_SELECTION")
+      # nearest line by these polys
+      ct = arcpy.GetCount_management(lyr_poly)[0]
+      if int(ct) > 0:
+         printMsg('Appending nearest lines for ' + ct + ' polygon(s) not within tolerance distance (score will == 1)...')
+         arcpy.SelectLayerByAttribute_management(lyr_line, selection_type = "CLEAR_SELECTION")
+         arcpy.Near_analysis(lyr_poly, lyr_line, search_radius = "5000 meters")
+         getids = ','.join(str(i) for i in unique_values(lyr_poly, "NEAR_FID"))
+         arcpy.SelectLayerByAttribute_management(lyr_line, "NEW_SELECTION", '"' + linesOID + '" in (' + getids + ')')
+         outlines2 = arcpy.CopyFeatures_management(lyr_line, out_feature_class= "outlines2")
+         arcpy.AddField_management(outlines2, 'score', 'FLOAT')
+         arcpy.CalculateField_management(outlines2, 'score',  1, expression_type="PYTHON")
+         arcpy.Append_management(outlines2, outLines, "NO_TEST")
+      
+      # use threshold to assign sdm_use value to flowlines
+      arcpy.AddField_management(outLines, fldUse.Name, 'INTEGER')
+      arcpy.CalculateField_management(outLines, fldUse.Name, expression="fn(!score!," + str(thresh) + ")", expression_type="PYTHON", 
+      code_block="def fn(s, t):\n   if s >= t:\n      return 1\n   else:\n      return 0\n")
+      
       return outLines
