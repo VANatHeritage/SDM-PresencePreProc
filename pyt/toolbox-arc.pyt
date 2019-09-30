@@ -26,7 +26,7 @@ Network should be NHDPlusv2
 """
 
 import arcpy
-import os, sys, traceback, re, pandas
+import os, sys, traceback, re, pandas, datetime
 from datetime import datetime as datetime
 
 from arcpy.sa import *
@@ -62,17 +62,17 @@ def GetElapsedTime (t1, t2):
 
 def printMsg(msg):
    arcpy.AddMessage(msg)
-   print msg
+   print(msg)
    return
    
 def printWrng(msg):
    arcpy.AddWarning(msg)
-   print 'Warning: ' + msg
+   print('Warning: ' + msg)
    return
    
 def printErr(msg):
    arcpy.AddError(msg)
-   print 'Error: ' + msg
+   print('Error: ' + msg)
    return
    
 def ProjectToMatch (fcTarget, csTemplate):
@@ -281,7 +281,11 @@ def SpatialClusterNetwork_old(inFeats, sepDist, network, barriers = "#", fldGrpI
    printMsg("Solving service areas...")
    arcpy.na.AddLocations(service_area_lyr, facilitiesLayerName, facil, "", "5000 Meters", search_criteria = [[str(netName), 'SHAPE']]) # large search tolerance to make sure all points get on network (large rivers with artificial paths)
    arcpy.na.Solve(service_area_lyr)
-   lines = arcpy.mapping.ListLayers(service_area_lyr,serviceLayerName)[0]
+   pyvers = sys.version_info.major
+   if pyvers < 3:
+      lines = arcpy.mapping.ListLayers(service_area_lyr, serviceLayerName)[0]
+   else:
+      lines = service_area_lyr.listLayers(serviceLayerName)[0]
    flowline_clip = arcpy.CopyFeatures_management(lines,os.path.join(scratchGDB,"service_area"))
    
    #buffer clipped flowlines by 1 meter
@@ -329,7 +333,7 @@ def SpatialClusterNetwork_old(inFeats, sepDist, network, barriers = "#", fldGrpI
    return inFeats
 
 # internal spatial clustering function over network dataset
-def SpatialClusterNetwork(software, species_pt, species_ln, species_py, flowlines, catchments, network, dams, sep_dist, snap_dist, output_lines):
+def SpatialClusterNetwork(species_pt, species_ln, species_py, flowlines, catchments, network, dams, sep_dist, snap_dist, output_lines):
    '''Clusters features based on specified search distance across a linear network dataset.
    Features within the search distance of each other will be assigned to the same group.
    inFeats = The input features to group
@@ -389,9 +393,10 @@ def SpatialClusterNetwork(software, species_pt, species_ln, species_py, flowline
    serviceLayerName = subLayerNames["SALines"]
    arcpy.na.AddLocations(service_area_lyr, facilitiesLayerName, species_pt, "", snap_dist)
    arcpy.na.Solve(service_area_lyr)
-   if software.lower() == "arcmap":
+   pyvers = sys.version_info.major
+   if pyvers < 3:
       lines = arcpy.mapping.ListLayers(service_area_lyr,serviceLayerName)[0]
-   if software.lower() == "arcgis pro":
+   else:
       lines = service_area_lyr.listLayers(serviceLayerName)[0]
    flowline_clip = arcpy.CopyFeatures_management(lines,"service_area")
 
@@ -615,7 +620,7 @@ def MarkSpatialDuplicates(inPolys, fldDateCalc = 'sdm_date', fldSFRA = 'tempSFRA
    arcpy.SelectLayerByAttribute_management('lyrPolys', "NEW_SELECTION", q)
    arcpy.CalculateField_management('lyrPolys', fldRaScore, 0, 'PYTHON')
    
-   print 'Updating %s column...' % fldUse
+   print('Updating ' + fldUse + ' column...')
    
    where_clause = "%s = 0" % fldSDC
    arcpy.SelectLayerByAttribute_management('lyrPolys', "NEW_SELECTION", where_clause)
@@ -1160,9 +1165,9 @@ class MergeData(object):
          initDissList2.extend(['Shape_Area','Shape_Leng'])
       else: 
          initDissList2.extend(['Shape_Area','Shape_Length'])
-      nums = range(0,len(inList))
+      nums = list(range(0,len(inList)))
       for i in nums:
-         nums2 = range(0,len(inList))
+         nums2 = list(range(0,len(inList)))
          nums2.remove(i)
          ul = [inList_u[x] for x in [i] + nums2]
          u_all = arcpy.Union_analysis(ul, "union_all")
@@ -1335,7 +1340,7 @@ class GrpOcc(object):
             flowlines = os.path.dirname(network) + os.sep + 'NHDFlowline_Network'
             catchments = os.path.dirname(os.path.dirname(network)) + os.sep + 'Catchment'
             # fn from PANHP
-            inPolys2 = SpatialClusterNetwork(software = "ArcMap", species_pt = None, species_ln = None, species_py = inPolys2, 
+            inPolys2 = SpatialClusterNetwork(species_pt = None, species_ln = None, species_py = inPolys2,
                flowlines = flowlines, catchments = catchments, network = network, dams = barriers, 
                sep_dist = sepDist, snap_dist = tolerance, output_lines = outLines)
             # returns inPolys2 with group ID column populated
@@ -1546,7 +1551,7 @@ class GetLines(object):
       outl = arcpy.MakeFeatureLayer_management(inLines, 'lines2', inLinesID + ' in (\'' + str1 + '\')')
       linesel = arcpy.CopyFeatures_management(outl, "outl")
       
-      fieldList = [['outl.' + inLinesID, inLinesID],['jointab.'  + inPolysID, inPolysID], ['outl.Shape', 'Shape']]
+      fieldList = [['outl.' + inLinesID, inLinesID],['jointab.' + inPolysID, inPolysID], ['outl.Shape', 'Shape']]
       where = "outl." + inLinesID  + " = jointab." + inLinesID
       
       # join poly ids to selected lines
