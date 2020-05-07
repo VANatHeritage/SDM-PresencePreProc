@@ -6,7 +6,6 @@ import os
 import re
 import sys
 import traceback
-import pathlib
 from datetime import datetime as datetime
 
 arcpy.CheckOutExtension("Spatial")
@@ -14,15 +13,12 @@ scratchGDB = r'C:\David\scratch\sdmPresencePreProc.gdb'
 # scratchGDB = arcpy.env.scratchGDB
 # scratchGDB = "in_memory"
 
-
 ### Define the fields to add
-template_fc = os.path.dirname(os.path.abspath(__file__)) + os.sep + 'template.gdb\\sdm_merged_template'
 class Field:
    def __init__(self, Name='', Type='', Length=''):
       self.Name = Name
       self.Type = Type
       self.Length = Length
-
 
 # Initial fields for editing
 fldSpCode = Field('sp_code', 'TEXT', 12)  # Code to identify species. Example: 'clemaddi'. If subspecies, use 12 letters
@@ -39,11 +35,6 @@ fldSFRACalc = Field('tempSFRACalc', 'TEXT', 20)  # for storing original RA colum
 fldRAFlag = Field('sdm_ra_flag', 'SHORT', '')  # Flag for editing. 0 = okay; 1 = needs edits; 2 = edits done
 fldFeatID = Field('sdm_featid', 'LONG', '')  # new unique id by polygon
 fldGrpID = Field('sdm_grpid', 'TEXT', 50)  # new unique id by group
-# fldComments = Field('revComments', 'TEXT', 250) # Field for review/editing comments; dropping in favor of UseWhy
-
-initFields = [fldSpCode, fldSrcTab, fldSrcFID, fldSFID, fldEOID, fldUse, fldUseWhy, fldDateCalc, fldDateFlag, fldRA,
-              fldSFRACalc, fldRAFlag, fldFeatID, fldGrpID]
-initDissList = [f.Name for f in initFields]
 
 # not using these
 # fldIsDup, fldRev, fldComments
@@ -52,8 +43,54 @@ initDissList = [f.Name for f in initFields]
 # fldDateScore = Field('dateScore', 'SHORT', '') # Quality score based on date
 # fldPQI = Field('pqiScore', 'SHORT', '') # Composite quality score ("Point Quality Index")
 # fldGrpUse = Field('grpUse', 'LONG', '') # Identifies highest quality records in group (1) versus all other records (0)
+# fldComments = Field('revComments', 'TEXT', 250) # Field for review/editing comments; dropping in favor of UseWhy
 # addFields = [fldRaScore, fldDateScore, fldPQI, fldGrpUse]
 
+# Field lists
+initFields = [fldSpCode, fldSrcTab, fldSrcFID, fldSFID, fldEOID, fldUse, fldUseWhy, fldDateCalc, fldDateFlag, fldRA,
+              fldSFRACalc, fldRAFlag, fldFeatID, fldGrpID]
+initDissList = [f.Name for f in initFields]
+initFieldsFull = [[f.Name, f.Type, f.Name, f.Length] for f in initFields]
+
+
+# Date calculation logic. Used in AddInitFields
+dateCalc = """def getStdDate(Date):
+   # Import regular expressions module
+   import re
+   
+   # Set up some regular expressions for pattern matching dates
+   p1 = re.compile(r'^[1-2][0-9][0-9][0-9]-[0-1][0-9]-[0-9][0-9]$') # yyyy-mm-dd
+   p2 = re.compile(r'^[1-2][0-9][0-9][0-9]-[0-1][0-9]$') # yyyy-mm
+   p3 = re.compile(r'^[1-2][0-9][0-9][0-9]-?$') # yyyy or yyyy-
+   p4 = re.compile(r'^[0-9][0-9]?/[0-9][0-9]?/[1-2][0-9][0-9][0-9]$') # m/d/yyyy or mm/dd/yyyy
+   p4m = re.compile(r'^[0-9][0-9]?/') # to extract month
+   p4d = re.compile(r'/[0-9][0-9]?/') # to extract day
+   
+   Date = str(Date)
+   if p1.match(Date):
+      yyyy = p1.match(Date).group()[:4]
+      mm = p1.match(Date).group()[5:7]
+      dd = p1.match(Date).group()[8:10]
+   elif p2.match(Date):
+      yyyy = p2.match(Date).group()[:4]
+      mm = p2.match(Date).group()[5:7]
+      dd = '00'
+   elif p3.match(Date):
+      yyyy = p3.match(Date).group()[:4]
+      mm = '00'
+      dd = '00'
+   elif p4.match(Date):
+      # This is a pain in the ass.
+      yyyy = p4.match(Date).group()[-4:]
+      mm = p4m.search(Date).group().replace('/', '').zfill(2)
+      dd = p4d.search(Date).group().replace('/', '').zfill(2)
+   else: 
+      yyyy = '0000'
+      mm = '00'
+      dd = '00'
+   
+   yyyymmdd = yyyy + '-' + mm + '-' + dd
+   return yyyymmdd"""
 
 
 def countFeatures(features):
@@ -300,12 +337,16 @@ def SpatialClusterNetwork(species_pt, species_ln, species_py, flowlines, catchme
    # create service area line layer
    service_area_lyr = arcpy.na.MakeServiceAreaLayer(network, "service_area_lyr", "Length", "TRAVEL_FROM", sep_dist,
                                                     polygon_type="NO_POLYS", line_type="TRUE_LINES", overlap="OVERLAP")
+   # Below is ArcGIS Pro equivalent; above is deprecated but works.
+   #service_area_lyr = arcpy.na.MakeServiceAreaAnalysisLayer(network, "service_area_lyr", "Standard",
+   #                                                         travel_direction="FROM_FACILITIES", cutoffs=sep_dist,
+   #                                                         output_type="LINES", geometry_at_overlaps="OVERLAP")
    service_area_lyr = service_area_lyr.getOutput(0)
    subLayerNames = arcpy.na.GetNAClassNames(service_area_lyr)
    facilitiesLayerName = subLayerNames["Facilities"]
    serviceLayerName = subLayerNames["SALines"]
    arcpy.na.AddLocations(service_area_lyr, facilitiesLayerName, species_pt, "", snap_dist)
-   arcpy.na.Solve(service_area_lyr)
+   arcpy.na.Solve(service_area_lyr, "SKIP")
    pyvers = sys.version_info.major
    if pyvers < 3:
       lines = arcpy.mapping.ListLayers(service_area_lyr, serviceLayerName)[0]
@@ -398,6 +439,7 @@ def SpatialClusterNetwork(species_pt, species_ln, species_py, flowlines, catchme
                cursor.updateRow(row)
          num += 1
 
+   # TODO: COMID, other attributes not in NHDPlusHR: use NHDPlusID?
    # clear selection on layer
    arcpy.SelectLayerByAttribute_management(sp_join_lyr, "CLEAR_SELECTION")
 
@@ -490,12 +532,15 @@ def make_gdb_name(string):
 
 
 # used in MergeData
-def GetOverlapping(inList, outPolys, summFlds=None, dissolve=False):
-   '''Internal function for MergeData. Generates all unique polygons from list of polygon FCs.'''
+def GetOverlapping(inList, outPolys, summFlds=None):
+   '''Internal function for MergeData. Generates all unique polygons from list of one or more polygon FCs.
+   If summFlds is provided, final dataset will be 'flat' (no overlap), with only ID, Count, and summary
+   fields returned.'''
 
+   # unique polygon ID to assign to new 'flat' dataset
    polyID = 'uniqID_poly'
    if len(inList) > 1:
-      print('Merging all datasets...')
+      print('Merging all datasets, converting to single-part...')
       m = arcpy.Merge_management(inList, scratchGDB + os.sep + 'merged0')
       m0 = arcpy.MultipartToSinglepart_management(m, scratchGDB + os.sep + 'merged0_single')
    else:
@@ -523,138 +568,12 @@ def GetOverlapping(inList, outPolys, summFlds=None, dissolve=False):
    else:
       # no overlaps
       print('No overlaps, returning merged single-part feature class...')
+      # still want dataset to include uniqID_poly and COUNT_ fields, so join here.
       arcpy.SpatialJoin_analysis(m0, upoly, outPolys, "JOIN_ONE_TO_ONE", "KEEP_ALL", match_option="ARE_IDENTICAL_TO")
 
    # outPolys has fields uniqID_poly and COUNT_.
 
    return outPolys
-
-
-
-
-# used in MergeData: deprecated once SummarizeOverlapping is done.
-def xMarkSpatialDuplicates(inPolys, fldDateCalc='sdm_date', fldSFRA='tempSFRACalc', fldUse='sdm_use',
-                          fldUseWhy='sdm_use_why', fldRaScore='sdm_ra'):
-   '''Internal function for MergeData. Sets raScore values, and identifies
-   spatial duplicates. It sets fldUse = 1 for the most recent
-   polygon among exact duplicates, and all others to 0. If duplicates
-   have the same date, fldSFRA is used to rank them (higher preferred).'''
-
-   # check RA values
-   rau = unique_values(inPolys, fldSFRA)
-   notin = list()
-   for r in rau:
-      if str(r) not in ['Very High', 'High', 'Medium', 'Low', 'Very Low']:
-         notin.append(r)
-
-   if len(notin) > 0:
-      printWrng(
-         "Some '" + fldSFRA + "' values not in allowed RA values. These will receive an '" + fldRaScore + "' value of 0.")
-      # return?
-
-   fldSDC = 'sdc'
-   # Get initial record count
-   arcpy.MakeFeatureLayer_management(inPolys, 'lyrPolys')
-   arcpy.AddField_management('lyrPolys', fldSDC)
-   arcpy.CalculateField_management('lyrPolys', fldSDC, 0, 'PYTHON')
-
-   # initiate fldUseWhy with empty string for db/shapefile compatiblity
-   arcpy.CalculateField_management('lyrPolys', fldUseWhy, '""', 'PYTHON')
-
-   # Get list of unique IDs
-   idCol = arcpy.Describe('lyrPolys').fieldInfo.getFieldName(0)
-   idList = unique_values(inPolys, idCol)
-   numID = len(idList)
-   printMsg('There are %s unique polygons.' % str(numID))
-
-   # set raScore
-   q = "%s = 'Very High'" % fldSFRA
-   arcpy.SelectLayerByAttribute_management('lyrPolys', "NEW_SELECTION", q)
-   arcpy.CalculateField_management('lyrPolys', fldRaScore, 5, 'PYTHON')
-   q = "%s = 'High'" % fldSFRA
-   arcpy.SelectLayerByAttribute_management('lyrPolys', "NEW_SELECTION", q)
-   arcpy.CalculateField_management('lyrPolys', fldRaScore, 4, 'PYTHON')
-   q = "%s = 'Medium'" % fldSFRA
-   arcpy.SelectLayerByAttribute_management('lyrPolys', "NEW_SELECTION", q)
-   arcpy.CalculateField_management('lyrPolys', fldRaScore, 3, 'PYTHON')
-   q = "%s = 'Low'" % fldSFRA
-   arcpy.SelectLayerByAttribute_management('lyrPolys', "NEW_SELECTION", q)
-   arcpy.CalculateField_management('lyrPolys', fldRaScore, 2, 'PYTHON')
-   q = "%s = 'Very Low'" % fldSFRA
-   arcpy.SelectLayerByAttribute_management('lyrPolys', "NEW_SELECTION", q)
-   arcpy.CalculateField_management('lyrPolys', fldRaScore, 1, 'PYTHON')
-   q = "%s IS NULL" % fldRaScore
-   arcpy.SelectLayerByAttribute_management('lyrPolys', "NEW_SELECTION", q)
-   arcpy.CalculateField_management('lyrPolys', fldRaScore, 0, 'PYTHON')
-
-   print('Updating ' + fldUse + ' column...')
-
-   where_clause = "%s = 0" % fldSDC
-   arcpy.SelectLayerByAttribute_management('lyrPolys', "NEW_SELECTION", where_clause)
-   numPolys = countFeatures('lyrPolys')
-
-   printMsg('Identifying spatial duplicates...')
-   while numPolys > 0:
-      id = min(unique_values('lyrPolys', idCol))
-      # printMsg('Working on ID %s' %id)
-
-      # Select the next un-assigned record
-      where_clause1 = "%s = %s" % (idCol, id)
-      arcpy.SelectLayerByAttribute_management('lyrPolys', "NEW_SELECTION", where_clause1)
-      arcpy.SelectLayerByLocation_management('lyrPolys', "ARE_IDENTICAL_TO", 'lyrPolys',
-                                             selection_type="ADD_TO_SELECTION")
-      arcpy.CalculateField_management('lyrPolys', fldSDC, 1, 'PYTHON')  # has been checked; set to 1
-
-      # Count the records
-      numPolys = countFeatures('lyrPolys')
-
-      if numPolys == 1:
-         # set isDup to 0
-         arcpy.CalculateField_management('lyrPolys', fldUse, 1, 'PYTHON')
-      else:
-         # set all selected to 0 to start
-         arcpy.CalculateField_management('lyrPolys', fldUse, 0, 'PYTHON')
-         arcpy.CalculateField_management('lyrPolys', fldUseWhy, '"spatial duplicate"', 'PYTHON')
-
-         # Find the maximum RA value
-         raList = unique_values('lyrPolys', fldRaScore)
-         maxRa = max(raList)
-
-         # Unselect any records where the RA is less than the maximum
-         where_clause2 = "%s < %s" % (fldRaScore, maxRa)
-         arcpy.SelectLayerByAttribute_management('lyrPolys', "REMOVE_FROM_SELECTION", where_clause2)
-
-         # Find the maximum standard date value
-         dateList = unique_values('lyrPolys', fldDateCalc)
-         maxDate = max(dateList)
-
-         # Unselect any records where the date is less than the maximum
-         where_clause2 = "%s < '%s'" % (fldDateCalc, maxDate)
-         arcpy.SelectLayerByAttribute_management('lyrPolys', "REMOVE_FROM_SELECTION", where_clause2)
-
-         # Count the remaining records, assign 1 to lowest ID number
-         numPolys = countFeatures('lyrPolys')
-         if numPolys == 1:
-            arcpy.CalculateField_management('lyrPolys', fldUse, 1, 'PYTHON')
-         else:
-            idList = unique_values('lyrPolys', idCol)
-            minID = min(idList)
-            where_clause2 = "%s <> %s" % (idCol, minID)
-            arcpy.SelectLayerByAttribute_management('lyrPolys', "REMOVE_FROM_SELECTION", where_clause2)
-            arcpy.CalculateField_management('lyrPolys', fldUse, 1, 'PYTHON')
-         arcpy.CalculateField_management('lyrPolys', fldUseWhy, '""', "PYTHON")
-
-      # select remaining unassigned polys
-      where_clause = "%s = 0" % fldSDC
-      arcpy.SelectLayerByAttribute_management('lyrPolys', "NEW_SELECTION", where_clause)
-      numPolys = countFeatures('lyrPolys')
-
-   # Get final record count
-   numPolysFinal = countFeatures(inPolys)
-   arcpy.SelectLayerByAttribute_management('lyrPolys', "CLEAR_SELECTION")
-   arcpy.DeleteField_management('lyrPolys', fldSDC)
-
-   return inPolys
 
 
 def fc2df(feature_class, field_list, skip_nulls=True):
