@@ -374,11 +374,17 @@ def SpatialClusterNetwork(species_pt, species_ln, species_py, flowlines, catchme
 
    # separate buffered flowlines at dams
    if dams:
+      arcpy.AddMessage("Splitting service areas at dam locations...")
       # buffer dams by 1.1 meters
-      dam_buff = arcpy.Buffer_analysis(dams, "dam_buff", "1.1 Meter", "FULL", "FLAT")
-      # split flowline buffers at dam buffers by erasing area of dam
-      flowline_erase = arcpy.Erase_analysis(flowline_buff, dam_buff, "flowline_erase")
-      multipart_input = flowline_erase
+      dams0 = arcpy.MakeFeatureLayer_management(dams)
+      arcpy.SelectLayerByLocation_management(dams0, "INTERSECT", flowline_buff)
+      if int(arcpy.GetCount_management(dams0)[0]) > 0:
+         dam_buff = arcpy.Buffer_analysis(dams0, "dam_buff", "1.1 Meter", "FULL", "FLAT")
+         # split flowline buffers at dam buffers by erasing area of dam
+         flowline_erase = arcpy.Erase_analysis(flowline_buff, dam_buff, "flowline_erase")
+         multipart_input = flowline_erase
+      else:
+         multipart_input = flowline_buff
    else:
       multipart_input = flowline_buff
 
@@ -420,8 +426,9 @@ def SpatialClusterNetwork(species_pt, species_ln, species_py, flowlines, catchme
    flow_ID = 'NHDPlusID'   # previously COMID
    # join species_pt layer with catchments to assign COMID
    # TODO: points can miss small intermediate reahces. Use polygons instead + remove those that are not in network:
-   #  Option 1: Intersect catchments by polygons
+   #  Option 1: Intersect catchments by polygons (will get everything, but probably more than wanted)
    #  Option 2: Generate end-points from (some subset of) service area lines, then select by those(?)
+   #  Option 3: Add those flowlines CONTAINED BY the original polygons (might still miss several flowlines)
    sp_join = arcpy.SpatialJoin_analysis(species_pt, catchments, "sp_join", "JOIN_ONE_TO_ONE", "KEEP_COMMON", "",
                                         "INTERSECT")
    sp_join = arcpy.DeleteIdentical_management(sp_join, [group_id, flow_ID])
