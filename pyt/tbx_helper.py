@@ -289,6 +289,11 @@ def SpatialClusterNetwork(species_pt, species_ln, species_py, flowlines, catchme
    sepDist = The distance with which to group features
    Adapted from script by Molly Moore, PANHP'''
 
+   # testing
+   # network = r'F:\David\GIS_data\NHDPlus_HR\VA_HydroNetHR.gdb\HydroNet\HydroNet_ND'
+   # output_lines = "testlines"
+   #
+
    # env and extensions
    arcpy.env.workspace = scratchGDB
    arcpy.CheckOutExtension("Network")
@@ -334,20 +339,29 @@ def SpatialClusterNetwork(species_pt, species_ln, species_py, flowlines, catchme
    arcpy.DeleteIdentical_management(species_pt, [fldFeatID.Name, "Shape"], "35 Meters")
 
    arcpy.AddMessage("Creating service area line layer")
-   # create service area line layer
-   service_area_lyr = arcpy.na.MakeServiceAreaLayer(network, "service_area_lyr", "Length", "TRAVEL_FROM", sep_dist,
-                                                    polygon_type="NO_POLYS", line_type="TRUE_LINES", overlap="OVERLAP")
-   # Below is ArcGIS Pro equivalent; above is deprecated but works.
-   #service_area_lyr = arcpy.na.MakeServiceAreaAnalysisLayer(network, "service_area_lyr", "Standard",
-   #                                                         travel_direction="FROM_FACILITIES", cutoffs=sep_dist,
-   #                                                         output_type="LINES", geometry_at_overlaps="OVERLAP")
+   pyvers = sys.version_info.major
+   if pyvers < 3:
+      # create service area line layer for ArcMap
+      service_area_lyr = arcpy.na.MakeServiceAreaLayer(network, "service_area_lyr", "Length", "TRAVEL_FROM", sep_dist,
+                                                       polygon_type="NO_POLYS", line_type="TRUE_LINES",
+                                                       overlap="OVERLAP", restriction_attribute_name="#")
+      # Note: Restriction attribute name = "#" is necessary for networks with standard restrictions in place.
+   else:
+      # Below is ArcGIS Pro equivalent; old call would work, but is deprecated, see:
+      # (https://pro.arcgis.com/en/pro-app/tool-reference/network-analyst/make-service-area-layer.htm)
+      tm = arcpy.na.TravelMode(arcpy.na.GetTravelModes(network)["Standard"])
+      tm.name = "noRestrict"
+      # Note: Restriction = [] is necessary for a network with restrictions in place for standard travel mode
+      tm.restrictions = []
+      service_area_lyr = arcpy.na.MakeServiceAreaAnalysisLayer(network, "service_area_lyr", tm, "FROM_FACILITIES",
+                                                               sep_dist, output_type="LINES",
+                                                               geometry_at_overlaps="OVERLAP")
    service_area_lyr = service_area_lyr.getOutput(0)
    subLayerNames = arcpy.na.GetNAClassNames(service_area_lyr)
    facilitiesLayerName = subLayerNames["Facilities"]
    serviceLayerName = subLayerNames["SALines"]
    arcpy.na.AddLocations(service_area_lyr, facilitiesLayerName, species_pt, "", snap_dist)
    arcpy.na.Solve(service_area_lyr, "SKIP")
-   pyvers = sys.version_info.major
    if pyvers < 3:
       lines = arcpy.mapping.ListLayers(service_area_lyr, serviceLayerName)[0]
    else:
@@ -401,6 +415,7 @@ def SpatialClusterNetwork(species_pt, species_ln, species_py, flowlines, catchme
          if row[0] is None:
             cursor.deleteRow()
 
+   # TODO: COMID, other attributes not in NHDPlusHR: use NHDPlusID?
    arcpy.AddMessage("Joining COMID")
    # join species_pt layer with catchments to assign COMID
    sp_join = arcpy.SpatialJoin_analysis(species_pt, catchments, "sp_join", "JOIN_ONE_TO_ONE", "KEEP_COMMON", "",
@@ -439,7 +454,6 @@ def SpatialClusterNetwork(species_pt, species_ln, species_py, flowlines, catchme
                cursor.updateRow(row)
          num += 1
 
-   # TODO: COMID, other attributes not in NHDPlusHR: use NHDPlusID?
    # clear selection on layer
    arcpy.SelectLayerByAttribute_management(sp_join_lyr, "CLEAR_SELECTION")
 
