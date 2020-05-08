@@ -347,11 +347,11 @@ def SpatialClusterNetwork(species_pt, species_ln, species_py, flowlines, catchme
                                                        overlap="OVERLAP", restriction_attribute_name="#")
       # Note: Restriction attribute name = "#" is necessary for networks with standard restrictions in place.
    else:
-      # Below is ArcGIS Pro equivalent; old call would work, but is deprecated, see:
+      # ArcGIS Pro: old MakeServiceAreaLayer call would work, but is deprecated, see:
       # (https://pro.arcgis.com/en/pro-app/tool-reference/network-analyst/make-service-area-layer.htm)
       tm = arcpy.na.TravelMode(arcpy.na.GetTravelModes(network)["Standard"])
       tm.name = "noRestrict"
-      # Note: Restriction = [] is necessary for a network with restrictions in place for standard travel mode
+      # Note: This removes all travel restrictions along network
       tm.restrictions = []
       service_area_lyr = arcpy.na.MakeServiceAreaAnalysisLayer(network, "service_area_lyr", tm, "FROM_FACILITIES",
                                                                sep_dist, output_type="LINES",
@@ -370,28 +370,29 @@ def SpatialClusterNetwork(species_pt, species_ln, species_py, flowlines, catchme
 
    arcpy.AddMessage("Buffering service area flowlines")
    # buffer clipped service area flowlines by 1 meter
-   flowline_buff = arcpy.Buffer_analysis(flowline_clip, "flowline_buff", "1 Meter", "FULL", "ROUND")
-
-   arcpy.AddMessage("Dissolving service area polygons")
-   # dissolve flowline buffers
-   flowline_diss = arcpy.Dissolve_management(flowline_buff, "flowline_diss", multi_part="SINGLE_PART")
+   flowline_buff = arcpy.Buffer_analysis(flowline_clip, "flowline_buff", "1 Meter", "FULL", "ROUND", "ALL")
 
    # separate buffered flowlines at dams
    if dams:
       # buffer dams by 1.1 meters
       dam_buff = arcpy.Buffer_analysis(dams, "dam_buff", "1.1 Meter", "FULL", "FLAT")
       # split flowline buffers at dam buffers by erasing area of dam
-      flowline_erase = arcpy.Erase_analysis(flowline_diss, dam_buff, "flowline_erase")
+      flowline_erase = arcpy.Erase_analysis(flowline_buff, dam_buff, "flowline_erase")
       multipart_input = flowline_erase
    else:
-      multipart_input = flowline_diss
+      multipart_input = flowline_buff
+
+   # arcpy.AddMessage("Dissolving service area polygons")
+   # dissolve flowline buffers
+   # flowline_diss = arcpy.Dissolve_management(flowline_buff, "flowline_diss", multi_part="SINGLE_PART")
 
    # multi-part to single part to create unique polygons
    single_part = arcpy.MultipartToSinglepart_management(multipart_input, "single_part")
 
    # create unique group id
    group_id = fldGrpID.Name  # unique to this toolbox
-   arcpy.AddField_management(single_part, group_id, "LONG")
+   if group_id not in [a.name for a in arcpy.ListFields(single_part)]:
+      arcpy.AddField_management(single_part, group_id, "LONG")
    num = 1
    with arcpy.da.UpdateCursor(single_part, group_id) as cursor:
       for row in cursor:
@@ -415,33 +416,37 @@ def SpatialClusterNetwork(species_pt, species_ln, species_py, flowlines, catchme
          if row[0] is None:
             cursor.deleteRow()
 
-   # TODO: COMID, other attributes not in NHDPlusHR: use NHDPlusID?
-   arcpy.AddMessage("Joining COMID")
+   arcpy.AddMessage("Joining flowline ID...")
+   flow_ID = 'NHDPlusID'   # previously COMID
    # join species_pt layer with catchments to assign COMID
+   # TODO: points can miss small intermediate reahces. Use polygons instead + remove those that are not in network:
+   #  Option 1: Intersect catchments by polygons
+   #  Option 2: Generate end-points from (some subset of) service area lines, then select by those(?)
    sp_join = arcpy.SpatialJoin_analysis(species_pt, catchments, "sp_join", "JOIN_ONE_TO_ONE", "KEEP_COMMON", "",
                                         "INTERSECT")
-   sp_join = arcpy.DeleteIdentical_management(sp_join, [group_id, "FEATUREID"])
-   if len(arcpy.ListFields(sp_join, "COMID")) == 0:
-      arcpy.AddField_management(sp_join, "COMID", "LONG")
-      with arcpy.da.UpdateCursor(sp_join, ["FEATUREID", "COMID"]) as cursor:
-         for row in cursor:
-            row[1] = str(row[0])
-            cursor.updateRow(row)
+   sp_join = arcpy.DeleteIdentical_management(sp_join, [group_id, flow_ID])
+   # Below not used: NHDPlusID is only ID needed in NHDPlusHR
+   # if len(arcpy.ListFields(sp_join, "COMID")) == 0:
+   #    arcpy.AddField_management(sp_join, "COMID", "LONG")
+   #    with arcpy.da.UpdateCursor(sp_join, ["FEATUREID", "COMID"]) as cursor:
+   #       for row in cursor:
+   #          row[1] = str(row[0])
+   #          cursor.updateRow(row)
 
    # obtain list of duplicate COMID because these are reaches assigned to multiple groups
-   freq = arcpy.Frequency_analysis(sp_join, "freq", "COMID")
+   freq = arcpy.Frequency_analysis(sp_join, "freq", flow_ID)
    dup_comid = []
-   with arcpy.da.SearchCursor(freq, ["FREQUENCY", "COMID"]) as cursor:
+   with arcpy.da.SearchCursor(freq, ["FREQUENCY", flow_ID]) as cursor:
       for row in cursor:
          if row[0] > 1:
             dup_comid.append(row[1])
 
-   arcpy.AddMessage("Resolving same reaches assigned to different groups")
    # get all groups within duplicate reaches and assign them to a single group
    sp_join_lyr = arcpy.MakeFeatureLayer_management(sp_join, "sp_join_lyr")
    if dup_comid:
+      arcpy.AddMessage("Resolving same reaches assigned to different groups")
       for dup in dup_comid:
-         arcpy.SelectLayerByAttribute_management(sp_join_lyr, "NEW_SELECTION", "COMID = {0}".format(dup))
+         arcpy.SelectLayerByAttribute_management(sp_join_lyr, "NEW_SELECTION", flow_ID + " = {0}".format(dup))
          combine_groups = []
          with arcpy.da.SearchCursor(sp_join_lyr, [group_id]) as cursor:
             for row in cursor:
@@ -458,26 +463,27 @@ def SpatialClusterNetwork(species_pt, species_ln, species_py, flowlines, catchme
    arcpy.SelectLayerByAttribute_management(sp_join_lyr, "CLEAR_SELECTION")
 
    # get list of COMID values for export of flowlines
-   with arcpy.da.SearchCursor(sp_join_lyr, "COMID") as cursor:
+   with arcpy.da.SearchCursor(sp_join_lyr, flow_ID) as cursor:
       comid = sorted({row[0] for row in cursor})
    comid = list(set(comid))
 
    # join attributes to flowlines
-   expression = 'COMID IN ({0})'.format(','.join(str(x) for x in comid))
+   expression = flow_ID + ' IN ({0})'.format(','.join(str(x) for x in comid))
    flowlines_lyr = arcpy.MakeFeatureLayer_management(flowlines, "flowlines_lyr", expression)
-   arcpy.AddJoin_management(flowlines_lyr, "COMID", sp_join, "COMID")
+   arcpy.AddJoin_management(flowlines_lyr, flow_ID, sp_join, flow_ID)
 
    arcpy.env.qualifiedFieldNames = False
 
    # export presence flowlines
    flowlines_lyr = arcpy.CopyFeatures_management(flowlines_lyr, "flowlines_lyr")
    # reduce fields
-   myfields = ['COMID', 'FEATUREID', 'SOURCEFC'] + initDissList
+   # myfields = ['COMID', 'FEATUREID', 'SOURCEFC'] + initDissList
+   # NOTE: These are NHDPlusHR attributes
+   myfields = [flow_ID, 'StreamOrde', 'Permanent_Identifier'] + initDissList
    # create an empty field mapping object
    mapS = arcpy.FieldMappings()
    # for each field, create an individual field map, and add it to the field mapping object
    for field in myfields:
-      arcpy.AddMessage("field: " + field)
       try:
          map = arcpy.FieldMap()
          map.addInputField(flowlines_lyr, field)

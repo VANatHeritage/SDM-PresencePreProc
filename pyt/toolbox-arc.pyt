@@ -558,7 +558,6 @@ class GrpOcc(object):
             # feature to point
             # inPt = arcpy.FeatureToPoint_management(in_features=inPolys2, out_feature_class= scratchGDB + os.sep + 'facil', point_location="INSIDE")
             arcpy.DeleteField_management(inPolys2, grpFld)
-            # inPolys2 = SpatialClusterNetwork(inPolys2, sepDist, network, barriers, grpFld) # old call
 
             # fixed names in network gdb
             flowlines = os.path.dirname(network) + os.sep + 'NHDFlowline'
