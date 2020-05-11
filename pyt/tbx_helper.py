@@ -52,9 +52,8 @@ initFields = [fldSpCode, fldSrcTab, fldSrcFID, fldSFID, fldEOID, fldUse, fldUseW
 initDissList = [f.Name for f in initFields]
 initFieldsFull = [[f.Name, f.Type, f.Name, f.Length] for f in initFields]
 
-
 # Date calculation logic. Used in AddInitFields
-dateCalc = """def getStdDate(Date):
+def getStdDate(Date):
    # Import regular expressions module
    import re
    
@@ -90,7 +89,14 @@ dateCalc = """def getStdDate(Date):
       dd = '00'
    
    yyyymmdd = yyyy + '-' + mm + '-' + dd
-   return yyyymmdd"""
+   return yyyymmdd
+
+
+def copyFld(lyr, fieldIn, fieldOut):
+   with arcpy.da.UpdateCursor(lyr, [fieldIn, fieldOut]) as cursor:
+      for row in cursor:
+         row[1] = row[0]
+         cursor.updateRow(row)
 
 
 def countFeatures(features):
@@ -174,19 +180,9 @@ def ProjectToMatch(fcTarget, csTemplate):
       return fcTarget_prj
 
 
-def TabToDict(inTab, fldKey, fldValue):
-   '''Converts two fields in a table to a dictionary'''
-   codeDict = {}
-   with arcpy.da.SearchCursor(inTab, [fldKey, fldValue]) as sc:
-      for row in sc:
-         key = sc[0]
-         val = sc[1]
-         codeDict[key] = val
-   return codeDict
-
-
 def JoinFields(ToTab, fldToJoin, FromTab, fldFromJoin, addFields):
-   '''An alternative to arcpy's JoinField_management, which is unbearably slow.
+   '''An alternative to arcpy's JoinField_management.
+   Note that this method is best for small 'FromTab' tables and one-two join fields.
 
    ToTab = The table to which fields will be added
    fldToJoin = The key field in ToTab, used to match records in FromTab
@@ -194,25 +190,50 @@ def JoinFields(ToTab, fldToJoin, FromTab, fldFromJoin, addFields):
    fldFromJoin = the key field in FromTab, used to match records in ToTab
    addFields = the list of fields to be added'''
 
-   codeblock = '''def getFldVal(srcID, fldDict):
+   def getFldVal(srcID, fldDict):
       try:
          fldVal = fldDict[srcID]
       except:
          fldVal = None
-      return fldVal'''
+      return fldVal
 
-   for fld in addFields:
-      printMsg('Working on "%s" field...' % fld)
-      fldObject = arcpy.ListFields(FromTab, fld)[0]
-      fldDict = TabToDict(FromTab, fldFromJoin, fld)
-      printMsg('Established data dictionary.')
-      expression = 'getFldVal(!%s!, %s)' % (fldToJoin, fldDict)
-      srcFields = arcpy.ListFields(ToTab, fld)
-      if len(srcFields) == 0:
-         arcpy.AddField_management(ToTab, fld, fldObject.type, '', '', fldObject.length)
-      printMsg('Calculating...')
-      arcpy.CalculateField_management(ToTab, fld, expression, 'PYTHON', codeblock)
-      printMsg('"%s" field done.' % fld)
+   # set up dictionary
+   codeDict = {}
+   ls = [fldFromJoin] + addFields
+   num = list(range(1, len(addFields)+1))
+   numt = [str(n) for n in num]
+   text = "sc[" + ("], sc[").join(numt) + "]"
+   with arcpy.da.SearchCursor(FromTab, ls) as sc:
+      for row in sc:
+         key = sc[0]
+         codeDict[key] = eval(text)
+
+   fldTypes = [a for a in arcpy.ListFields(FromTab) if a.name in addFields]
+   existFld = [f.name for f in arcpy.ListFields(ToTab)]
+   toAdd = [a for a in fldTypes if a.name not in existFld]
+   # TODO: need to translate field types to get this to work
+   # if len(toAdd) > 0:
+   #   arcpy.AddFields_management(ToTab, [[a.name, a.type, a.name, a.length] for a in toAdd])
+   for f in toAdd:
+      arcpy.AddField_management(ToTab, f.name, f.type, '', '', f.length)
+
+   # Join fields
+   ls = [fldToJoin] + addFields
+   if len(addFields) > 1:
+      with arcpy.da.UpdateCursor(ToTab, ls) as cursor:
+         for row in cursor:
+            vals = getFldVal(row[0], codeDict)
+            if vals:
+               vals2 = list(vals)
+               for n in num:
+                  row[n] = vals2[n-1]
+               cursor.updateRow(row)
+   else:
+      # one field only
+      with arcpy.da.UpdateCursor(ToTab, ls) as cursor:
+         for row in cursor:
+            row[1] = getFldVal(row[0], codeDict)
+            cursor.updateRow(row)
    return ToTab
 
 
@@ -259,7 +280,8 @@ def SpatialCluster(inFeats, sepDist, fldGrpID='grpID'):
    # Add and populate grpID field in buffers
    printMsg('Populating grouping field in buffers')
    arcpy.AddField_management(explBuff, fldGrpID, 'LONG')
-   arcpy.CalculateField_management(explBuff, fldGrpID, '!OBJECTID!', 'PYTHON')
+   # arcpy.CalculateField_management(explBuff, fldGrpID, '!OBJECTID!', 'PYTHON')
+   copyFld(explBuff, 'OBJECTID', fldGrpID)
 
    # Spatial join buffers with input features
    printMsg('Performing spatial join between buffers and input features')
@@ -369,8 +391,9 @@ def SpatialClusterNetwork(species_pt, species_ln, species_py, flowlines, catchme
    flowline_clip = arcpy.CopyFeatures_management(lines, "service_area")
 
    arcpy.AddMessage("Buffering service area flowlines")
-   # buffer clipped service area flowlines by 1 meter
+   # buffer clipped service area flowlines by 1 meter, dissolved all
    flowline_buff = arcpy.Buffer_analysis(flowline_clip, "flowline_buff", "1 Meter", "FULL", "ROUND", "ALL")
+   
 
    # separate buffered flowlines at dams
    if dams:
@@ -387,10 +410,6 @@ def SpatialClusterNetwork(species_pt, species_ln, species_py, flowlines, catchme
          multipart_input = flowline_buff
    else:
       multipart_input = flowline_buff
-
-   # arcpy.AddMessage("Dissolving service area polygons")
-   # dissolve flowline buffers
-   # flowline_diss = arcpy.Dissolve_management(flowline_buff, "flowline_diss", multi_part="SINGLE_PART")
 
    # multi-part to single part to create unique polygons
    single_part = arcpy.MultipartToSinglepart_management(multipart_input, "single_part")
@@ -575,7 +594,8 @@ def GetOverlapping(inList, outPolys, summFlds=None):
       m0 = arcpy.MultipartToSinglepart_management(inList[0], scratchGDB + os.sep + 'merged0_single')
    upoly = arcpy.CountOverlappingFeatures_analysis(m0, scratchGDB + os.sep + 'upoly')
    arcpy.AddField_management(upoly, polyID, 'LONG')
-   arcpy.CalculateField_management(upoly, polyID, '!OBJECTID!')
+   # arcpy.CalculateField_management(upoly, polyID, '!OBJECTID!')
+   copyFld(upoly, 'OBJECTID', polyID)
    # check if any overlaps
    maxct = max([a[0] for a in arcpy.da.SearchCursor(upoly, "COUNT_")])
 

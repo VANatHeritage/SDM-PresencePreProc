@@ -119,7 +119,7 @@ class AddInitFlds(object):
       validation is performed.  This method is called whenever a parameter
       has been changed. Example would be updating field list after a feature 
       class was selected for a parameter."""
-      if params[0].value:
+      if params[0].altered:
          f1 = list()
          f2 = list("#")
          for f in arcpy.ListFields(params[0].value):
@@ -184,69 +184,149 @@ class AddInitFlds(object):
       toAdd = [a for a in initFieldsFull if a[0] not in existFld]
       arcpy.AddFields_management(outPolys, toAdd)
 
-      # Populate some fields
-      # Source table
-      expression = "'%s'" % srcTab
-      arcpy.CalculateField_management(outPolys, fldSrcTab.Name, expression, 'PYTHON')
-      printMsg('Source table field set to "%s".' % srcTab)
-
-      # Species Code
-      expression = "'%s'" % spCode
-      arcpy.CalculateField_management(outPolys, fldSpCode.Name, expression, 'PYTHON')
-      printMsg('Species code field set to "%s".' % spCode)
-
-      # table fid (object/fid)
       a = arcpy.Describe(outPolys).Fields
       for a1 in a:
          if a1.Type == 'OID':
             fldID = str(a1.Name)
             break
-      expression = "!%s!" % (fldID)
-      arcpy.CalculateField_management(outPolys, fldSrcFID.Name, expression, 'PYTHON')
-      printMsg('Unique ID field populated.')
+
+      # Faster calculation-testing
+      # Need to set no-calc fields [#] to a field. They won't get calculated though
+      if fldEO == "#":
+         fldEO = fldID
+      if fldSF == "#":
+         fldSF = fldID
+      if fldSFRA == "#":
+         fldSFRA = fldID
+
+      printMsg('Calculating fields...')
+      fldlist = [fldID, fldSrcTab.Name, fldSpCode.Name, fldSpCode.Name, fldUse.Name,
+                 fldEO, fldEOID.Name, fldSF, fldSFID.Name, fldSFRA, fldSFRACalc.Name, fldRAFlag.Name,
+                 fldDate, fldDateCalc.Name, fldDateFlag.Name]
+      curs = arcpy.da.UpdateCursor(outPolys, fldlist)
+      for row in curs:
+         row[1] = row[0]
+         row[2] = srcTab
+         row[3] = spCode
+         row[4] = '1'
+         if fldEO != fldID and str(fldEO) != str(fldEOID.Name):
+            row[6] = row[5]
+         if fldSF != fldID and str(fldSF) != str(fldSFID.Name):
+            row[8] = row[7]
+         if fldSFRA != fldID:
+            row[10] = row[9]
+            if row[9] not in ['Very High', 'High', 'Medium', 'Low', 'Very Low']:
+               row[11] = 1
+         # date
+         date2 = getStdDate(row[12])
+         row[13] = date2
+         if date2 == '0000-00-00':
+            row[14] = 1
+         curs.updateRow(row)
+
+      # # Populate some fields
+      # # table fid (object/fid)
+      # expression = "!%s!" % (fldID)
+      # arcpy.CalculateField_management(outPolys, fldSrcFID.Name, expression, 'PYTHON')
+      # printMsg('Unique ID field populated.')
+      #
+      # # Source table
+      # expression = "'%s'" % srcTab
+      # arcpy.CalculateField_management(outPolys, fldSrcTab.Name, expression, 'PYTHON')
+      # printMsg('Source table field set to "%s".' % srcTab)
+      #
+      # # Species Code
+      # expression = "'%s'" % spCode
+      # arcpy.CalculateField_management(outPolys, fldSpCode.Name, expression, 'PYTHON')
+      # printMsg('Species code field set to "%s".' % spCode)
 
       # use
-      arcpy.CalculateField_management(outPolys, fldUse.Name, '1', "PYTHON")
+      # arcpy.CalculateField_management(outPolys, fldUse.Name, '1', "PYTHON")
 
       # EO_ID and SF_ID
-      if fldEO != "#" and str(fldEO) != str(fldEOID.Name):
-         expression = "!%s!" % fldEO
-         arcpy.CalculateField_management(outPolys, fldEOID.Name, expression, 'PYTHON')
-         printMsg('%s field set to "%s".' % (fldEOID.Name, fldEO))
-      if fldSF != "#" and str(fldSF) != str(fldSFID.Name):
-         expression = "!%s!" % fldSF
-         arcpy.CalculateField_management(outPolys, fldSFID.Name, expression, 'PYTHON')
-         printMsg('%s field set to "%s".' % (fldSFID.Name, fldSF))
-      if fldSFRA != "#":
-         expression = "!%s!" % fldSFRA
-         arcpy.CalculateField_management(outPolys, fldSFRACalc.Name, expression, 'PYTHON')
-         printMsg('%s field set to "%s".' % (fldSFRACalc.Name, fldSFRA))
+      # if fldEO != "#" and str(fldEO) != str(fldEOID.Name):
+      #    expression = "!%s!" % fldEO
+      #    arcpy.CalculateField_management(outPolys, fldEOID.Name, expression, 'PYTHON')
+      #    printMsg('%s field set to "%s".' % (fldEOID.Name, fldEO))
+      # if fldSF != "#" and str(fldSF) != str(fldSFID.Name):
+      #    expression = "!%s!" % fldSF
+      #    arcpy.CalculateField_management(outPolys, fldSFID.Name, expression, 'PYTHON')
+      #    printMsg('%s field set to "%s".' % (fldSFID.Name, fldSF))
+      # if fldSFRA != "#":
+      #    expression = "!%s!" % fldSFRA
+      #    arcpy.CalculateField_management(outPolys, fldSFRACalc.Name, expression, 'PYTHON')
+      #    printMsg('%s field set to "%s".' % (fldSFRACalc.Name, fldSFRA))
 
       # Date
-      codeblock = dateCalc
-      expression = 'getStdDate(!%s!)' % fldDate
-      arcpy.CalculateField_management(outPolys, fldDateCalc.Name, expression, 'PYTHON', codeblock)
-      printMsg('Standard date field populated.')
+      # codeblock = """def getStdDate(Date):
+      #    # Import regular expressions module
+      #    import re
+      #
+      #    # Set up some regular expressions for pattern matching dates
+      #    p1 = re.compile(r'^[1-2][0-9][0-9][0-9]-[0-1][0-9]-[0-9][0-9]$') # yyyy-mm-dd
+      #    p2 = re.compile(r'^[1-2][0-9][0-9][0-9]-[0-1][0-9]$') # yyyy-mm
+      #    p3 = re.compile(r'^[1-2][0-9][0-9][0-9]-?$') # yyyy or yyyy-
+      #    p4 = re.compile(r'^[0-9][0-9]?/[0-9][0-9]?/[1-2][0-9][0-9][0-9]$') # m/d/yyyy or mm/dd/yyyy
+      #    p4m = re.compile(r'^[0-9][0-9]?/') # to extract month
+      #    p4d = re.compile(r'/[0-9][0-9]?/') # to extract day
+      #
+      #    Date = str(Date)
+      #    if p1.match(Date):
+      #       yyyy = p1.match(Date).group()[:4]
+      #       mm = p1.match(Date).group()[5:7]
+      #       dd = p1.match(Date).group()[8:10]
+      #    elif p2.match(Date):
+      #       yyyy = p2.match(Date).group()[:4]
+      #       mm = p2.match(Date).group()[5:7]
+      #       dd = '00'
+      #    elif p3.match(Date):
+      #       yyyy = p3.match(Date).group()[:4]
+      #       mm = '00'
+      #       dd = '00'
+      #    elif p4.match(Date):
+      #       # This is a pain in the ass.
+      #       yyyy = p4.match(Date).group()[-4:]
+      #       mm = p4m.search(Date).group().replace('/', '').zfill(2)
+      #       dd = p4d.search(Date).group().replace('/', '').zfill(2)
+      #    else:
+      #       yyyy = '0000'
+      #       mm = '00'
+      #       dd = '00'
+      #
+      #    yyyymmdd = yyyy + '-' + mm + '-' + dd
+      #    return yyyymmdd"""
+      # expression = 'getStdDate(!%s!)' % fldDate
+      # arcpy.CalculateField_management(outPolys, fldDateCalc.Name, expression, 'PYTHON', codeblock)
+      # printMsg('Standard date field populated.')
+      #
+      # # Date certainty (of year)
+      # codeblock = """def flagDate(Date):
+      #    if Date == '0000-00-00':
+      #       return 1
+      #    else:
+      #       return None"""
+      # expression = 'flagDate(!%s!)' % fldDateCalc.Name
+      # arcpy.CalculateField_management(outPolys, fldDateFlag.Name, expression, 'PYTHON', codeblock)
+      # printMsg('Date flag field populated.')
 
-      # Date certainty (of year)
-      codeblock = """def flagDate(Date):
-         if Date == '0000-00-00':
-            return 1
-         else:
-            return None"""
-      expression = 'flagDate(!%s!)' % fldDateCalc.Name
-      arcpy.CalculateField_management(outPolys, fldDateFlag.Name, expression, 'PYTHON', codeblock)
-      printMsg('Date flag field populated.')
+      # arcpy.MakeFeatureLayer_management(outPolys, 'outPolys')
+      # q = "%s NOT IN ('Very High','High','Medium','Low','Very Low')" % fldSFRACalc.Name
+      # arcpy.SelectLayerByAttribute_management('outPolys', 'NEW_SELECTION', q)
+      # arcpy.CalculateField_management('outPolys', fldRAFlag.Name, 1, "PYTHON")
+      # if (int(arcpy.GetCount_management('outPolys')[0]) > 0):
+      #    printMsg(
+      #       "Some RA values are not in the allowed value list and were marked with '%s' = 1. Make sure to edit '%s' column for these rows." % (
+      #       fldRAFlag.Name, fldSFRACalc.Name))
+      # arcpy.SelectLayerByAttribute_management('outPolys', 'CLEAR_SELECTION')
 
-      arcpy.MakeFeatureLayer_management(outPolys, 'outPolys')
-      q = "%s NOT IN ('Very High','High','Medium','Low','Very Low')" % fldSFRACalc.Name
-      arcpy.SelectLayerByAttribute_management('outPolys', 'NEW_SELECTION', q)
-      arcpy.CalculateField_management('outPolys', fldRAFlag.Name, 1, "PYTHON")
-      if (int(arcpy.GetCount_management('outPolys')[0]) > 0):
-         printMsg(
-            "Some RA values are not in the allowed value list and were marked with '%s' = 1. Make sure to edit '%s' column for these rows." % (
-            fldRAFlag.Name, fldSFRACalc.Name))
-      arcpy.SelectLayerByAttribute_management('outPolys', 'CLEAR_SELECTION')
+      ravals =[a[0] for a in arcpy.da.SearchCursor(outPolys, fldRAFlag.Name) if a[0] == 1]
+      if len(ravals) > 0:
+         printWrng("Some RA values are not in the allowed value list and were marked with `" +
+                   fldRAFlag.Name + "` = 1. Make sure to edit `" + fldSFRACalc.Name + "` column for these rows.")
+      datevals = [a[0] for a in arcpy.da.SearchCursor(outPolys, fldDateFlag.Name) if a[0] == 1]
+      if len(datevals) > 0:
+         printWrng("Some date values were not able to be calculated and were marked with `" +
+                   fldDateFlag.Name + "` = 1. Make sure to edit `" + fldDateCalc.Name + "` column for these rows.")
 
       return outPolys
 
@@ -373,7 +453,8 @@ class MergeData(object):
       if len(notin) > 0:
          printWrng("Some '" + fldSFRACalc.Name + "' values not in allowed RA values. These will receive an '" + fldRA.Name + "' value of 0.")
          # return?
-      ra_logic = """def fn(sfra):
+      # ra_logic = """
+      def sfra_fn(sfra):
          if sfra == 'Very High':
             return 5
          elif sfra == 'High':
@@ -385,8 +466,12 @@ class MergeData(object):
          elif sfra == 'Very Low':
             return 1
          else:
-            return 0"""
-      arcpy.CalculateField_management(temp, fldRA.Name, "fn(!" + fldSFRACalc.Name + "!)", code_block=ra_logic)
+            return 0
+      curs = arcpy.da.UpdateCursor(temp, [fldSFRACalc.Name, fldRA.Name])
+      for row in curs:
+         row[1] = sfra_fn(row[0])
+         curs.updateRow(row)
+      # arcpy.CalculateField_management(temp, fldRA.Name, "sfra_fn(!" + fldSFRACalc.Name + "!)", code_block=ra_logic)
 
       # This approach uses count overlapping polys (requires ArcPro 2.5+)
       printMsg('Generating all unique polygons...')
@@ -394,7 +479,7 @@ class MergeData(object):
       GetOverlapping([temp], temp1)
       # temp1 has fields uniqID_poly and COUNT_.
 
-      # Set = 0 those which are spatial duplicates (using date/ra to find 'best' polygon)
+      # Set = 0 those which are spatial duplicates (sorting by date/ra to find 'best' polygon)
       lyr = arcpy.MakeFeatureLayer_management(temp1, where_clause='COUNT_ > 1')
       if arcpy.GetCount_management(lyr)[0] != '0':
          printMsg('Setting spatial duplicates to ' + fldUse.Name + ' = 0')
@@ -406,8 +491,12 @@ class MergeData(object):
          oids = [str(o) for o in oids]
          # set those not in the selected list to use = 0
          arcpy.SelectLayerByAttribute_management(lyr, "NEW_SELECTION", where_clause="OBJECTID NOT IN (" + ",".join(oids) + ")")
-         arcpy.CalculateField_management(lyr, fldUse.Name, '0')
-         arcpy.CalculateField_management(lyr, fldUseWhy.Name, "'Spatial duplicate'")
+         curs = arcpy.da.UpdateCursor(lyr, [fldUse.Name, fldUseWhy.Name])
+         for row in curs:
+            row[0] = 0
+            row[1] = 'Spatial duplicate'
+         # arcpy.CalculateField_management(lyr, fldUse.Name, '0')
+         # arcpy.CalculateField_management(lyr, fldUseWhy.Name, "'Spatial duplicate'")
          arcpy.SelectLayerByAttribute_management(lyr, "CLEAR_SELECTION")
          del lyr
 
@@ -531,7 +620,7 @@ class GrpOcc(object):
             fldID = str(a1.Name)
             break
 
-      arcpy.CalculateField_management(inPolys2, fldFeatID.Name, '!' + fldID + '!', 'PYTHON')
+      copyFld(inPolys2, fldID, fldFeatID.Name)
 
       if params[1].value:
          sepDist = params[1].valueAsText
@@ -546,10 +635,6 @@ class GrpOcc(object):
             printMsg("Using regular grouping with distance of " + str(sepDist))
             # original is joined automatically
             SpatialCluster(inFeats=inPolys2, sepDist=sepDist, fldGrpID=grpFld)
-            # joingrp = 'grpID'
-            # JoinFields(inPolys, fldID, inPolys2, fldID, [joingrp])
-
-            # arcpy.JoinField_management(inPolys, fldID, inPolys2, fldID, [joingrp])
          else:
             # network analyst
             printMsg("Using network grouping with distance of " + str(sepDist))
@@ -569,7 +654,8 @@ class GrpOcc(object):
             # returns inPolys2 with group ID column populated
       else:
          # just update column from src_grpid
-         arcpy.CalculateField_management(inPolys2, fldGrpID.Name, '!' + fldEOID.Name + '!', 'PYTHON')
+         # arcpy.CalculateField_management(inPolys2, fldGrpID.Name, '!' + fldEOID.Name + '!', 'PYTHON')
+         copyFld(inPolys2, fldEOID.Name, fldGrpID.Name)
 
       uv = unique_values(inPolys2, fldGrpID.Name)
       if '' in uv or ' ' in uv:
