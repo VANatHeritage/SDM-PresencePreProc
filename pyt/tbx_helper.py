@@ -93,6 +93,7 @@ def getStdDate(Date):
 
 
 def copyFld(lyr, fieldIn, fieldOut):
+   '''Copy values from one field to another new field'''
    with arcpy.da.UpdateCursor(lyr, [fieldIn, fieldOut]) as cursor:
       for row in cursor:
          row[1] = row[0]
@@ -324,18 +325,28 @@ def SpatialClusterNetwork(species_pt, species_ln, species_py, flowlines, catchme
    # create empty list to store converted point layers for future merge
    species_lyrs = []
 
+   arcpy.AddMessage('Generating points to use in network analysis...')
+   # This process also attributes points with flowline IDs (NHDPlusID in NHDPlusHR)
    # convert multipart points to singlepart
    if species_pt:
-      pts = arcpy.MultipartToSinglepart_management(species_pt, "pts")
+      arcpy.MultipartToSinglepart_management(species_pt, "pts0")
+      pts = arcpy.Identity_analysis('pts0', catchments, 'ptcats', "NO_FID")
       species_lyrs.append(pts)
 
-   # convert line and polygon data to vertices
+   # convert lines to by-catchment endpoint vertices
    if species_ln:
-      lns = arcpy.FeatureVerticesToPoints_management(species_ln, "lns", "ALL")
+      arcpy.Identity_analysis(species_ln, catchments, 'lincats', "NO_FID")
+      lns = arcpy.FeatureVerticesToPoints_management('lincats', "lns", "BOTH_ENDS")
       species_lyrs.append(lns)
 
+   # convert polygons to by-catchment, subdivided-polygon centroids
    if species_py:
-      pys = arcpy.FeatureVerticesToPoints_management(species_py, "polys", "ALL")
+      arcpy.Identity_analysis(species_py, catchments, 'polycats', "NO_FID")
+      # Target area size calculated as square of snap-distance (default would be 10,000 sq. meters)
+      arcpy.SubdividePolygon_management("polycats", "polycats_subd", "EQUAL_AREAS",
+                                        target_area=float(snap_dist)**2, subdivision_type="STACKED_BLOCKS")
+      pys = arcpy.FeatureToPoint_management('polycats_subd', 'polys', "INSIDE")
+      # pys = arcpy.FeatureVerticesToPoints_management(species_py, "polys", "ALL")
       species_lyrs.append(pys)
 
    # merge the point layers together
@@ -357,10 +368,10 @@ def SpatialClusterNetwork(species_pt, species_ln, species_py, flowlines, catchme
             cursor.updateRow(row)
             i += 1
 
-   # delete identical points with tolerance to increase speed
-   arcpy.DeleteIdentical_management(species_pt, [fldFeatID.Name, "Shape"], "35 Meters")
+   # delete identical points
+   arcpy.DeleteIdentical_management(species_pt, "Shape", None, 0)
 
-   arcpy.AddMessage("Creating service area line layer")
+   arcpy.AddMessage("Creating service area line layer...")
    pyvers = sys.version_info.major
    if pyvers < 3:
       # create service area line layer for ArcMap
@@ -390,10 +401,9 @@ def SpatialClusterNetwork(species_pt, species_ln, species_py, flowlines, catchme
       lines = service_area_lyr.listLayers(serviceLayerName)[0]
    flowline_clip = arcpy.CopyFeatures_management(lines, "service_area")
 
-   arcpy.AddMessage("Buffering service area flowlines")
+   arcpy.AddMessage("Buffering service area flowlines...")
    # buffer clipped service area flowlines by 1 meter, dissolved all
    flowline_buff = arcpy.Buffer_analysis(flowline_clip, "flowline_buff", "1 Meter", "FULL", "ROUND", "ALL")
-   
 
    # separate buffered flowlines at dams
    if dams:
@@ -443,14 +453,12 @@ def SpatialClusterNetwork(species_pt, species_ln, species_py, flowlines, catchme
 
    arcpy.AddMessage("Joining flowline ID...")
    flow_ID = 'NHDPlusID'   # previously COMID
-   # join species_pt layer with catchments to assign COMID
-   # TODO: points can miss small intermediate reahces. Use polygons instead + remove those that are not in network:
-   #  Option 1: Intersect catchments by polygons (will get everything, but probably more than wanted)
-   #  Option 2: Generate end-points from (some subset of) service area lines, then select by those(?)
-   #  Option 3: Add those flowlines CONTAINED BY the original polygons (might still miss several flowlines)
-   sp_join = arcpy.SpatialJoin_analysis(species_pt, catchments, "sp_join", "JOIN_ONE_TO_ONE", "KEEP_COMMON", "",
-                                        "INTERSECT")
+   sp_join = arcpy.CopyFeatures_management(species_pt, 'sp_join')
    sp_join = arcpy.DeleteIdentical_management(sp_join, [group_id, flow_ID])
+
+   # OLD METHOD: join species_pt layer with catchments to assign COMID
+   # sp_join = arcpy.SpatialJoin_analysis(species_pt, catchments, "sp_join", "JOIN_ONE_TO_ONE", "KEEP_COMMON", "",
+   #                                      "INTERSECT")
    # Below not used: NHDPlusID is only ID needed in NHDPlusHR
    # if len(arcpy.ListFields(sp_join, "COMID")) == 0:
    #    arcpy.AddField_management(sp_join, "COMID", "LONG")
@@ -459,7 +467,7 @@ def SpatialClusterNetwork(species_pt, species_ln, species_py, flowlines, catchme
    #          row[1] = str(row[0])
    #          cursor.updateRow(row)
 
-   # obtain list of duplicate COMID because these are reaches assigned to multiple groups
+   # obtain list of duplicate COMID because these can be reaches assigned to multiple groups
    freq = arcpy.Frequency_analysis(sp_join, "freq", flow_ID)
    dup_comid = []
    with arcpy.da.SearchCursor(freq, ["FREQUENCY", flow_ID]) as cursor:
@@ -518,14 +526,11 @@ def SpatialClusterNetwork(species_pt, species_ln, species_py, flowlines, catchme
          next
    arcpy.FeatureClassToFeatureClass_conversion(flowlines_lyr, os.path.dirname(output_lines),
                                                os.path.basename(output_lines), "#", mapS)
-
    # append group IDs to original datasets
    if species_py:
       species_pt = arcpy.DeleteIdentical_management(species_pt, [fldFeatID.Name, group_id])
       JoinFields(species_py, fldFeatID.Name, species_pt, fldFeatID.Name, [fldGrpID.Name])
 
-   # delete temporary fields and datasets
-   # arcpy.Delete_management("in_memory")
    return species_py
 
 
