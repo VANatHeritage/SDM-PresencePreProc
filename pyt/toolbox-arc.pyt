@@ -200,7 +200,7 @@ class AddInitFlds(object):
          fldSFRA = fldID
 
       printMsg('Calculating fields...')
-      fldlist = [fldID, fldSrcTab.Name, fldSpCode.Name, fldSpCode.Name, fldUse.Name,
+      fldlist = [fldID, fldSrcFID.Name, fldSrcTab.Name, fldSpCode.Name, fldUse.Name,
                  fldEO, fldEOID.Name, fldSF, fldSFID.Name, fldSFRA, fldSFRACalc.Name, fldRAFlag.Name,
                  fldDate, fldDateCalc.Name, fldDateFlag.Name]
       curs = arcpy.da.UpdateCursor(outPolys, fldlist)
