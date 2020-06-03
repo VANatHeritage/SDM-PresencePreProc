@@ -597,6 +597,7 @@ def GetOverlapping(inList, outPolys, summFlds=None):
    else:
       print('Converting to single-part...')
       m0 = arcpy.MultipartToSinglepart_management(inList[0], scratchGDB + os.sep + 'merged0_single')
+
    upoly = arcpy.CountOverlappingFeatures_analysis(m0, scratchGDB + os.sep + 'upoly')
    arcpy.AddField_management(upoly, polyID, 'LONG')
    # arcpy.CalculateField_management(upoly, polyID, '!OBJECTID!')

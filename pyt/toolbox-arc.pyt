@@ -495,6 +495,7 @@ class MergeData(object):
          for row in curs:
             row[0] = 0
             row[1] = 'Spatial duplicate'
+            curs.updateRow(row)
          # arcpy.CalculateField_management(lyr, fldUse.Name, '0')
          # arcpy.CalculateField_management(lyr, fldUseWhy.Name, "'Spatial duplicate'")
          arcpy.SelectLayerByAttribute_management(lyr, "CLEAR_SELECTION")
