@@ -83,8 +83,11 @@ def getStdDate(Date):
       yyyy = p4.match(Date).group()[-4:]
       mm = p4m.search(Date).group().replace('/', '').zfill(2)
       dd = p4d.search(Date).group().replace('/', '').zfill(2)
-   else: 
-      yyyy = '0000'
+   else:
+      # Try to get any four digits in a row
+      yyyy = re.findall('(?<!\d)\d{4}(?!\d)', Date)[-1:]
+      if len(yyyy) == 0:
+         yyyy = '0000'
       mm = '00'
       dd = '00'
    
