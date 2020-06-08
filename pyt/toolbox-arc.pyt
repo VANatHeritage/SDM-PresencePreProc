@@ -7,16 +7,7 @@ Created on Thu May 10 11:52:23 2018
 # This is the sdmPresencePreProc arctoolbox.
 
 # TODO (list by priority; remove when added)
-#  in line selection SpatialClusterNetwork, could choose highest RA/latest date for line/poly associations
 #  sep. dists., other info. could be stored in a metadata table
-# TODO Aquatic grouping tool:
-#  1. updates sdm_grp_id
-#  2. Returns table of [unique COMID], feat occur attributes, [line geom], score, etc.
-#    - figure out how to select which feat occur attaches to which line (maybe just latest date of all related, or highest score).
-#  3. update sdm_grp_id if necessary (if two groups share a line)
-#  4. update sdm_use best as possible
-#  overall need = GetLinesSimple integrate into grouping network - maybe just update with SDM_Tools from PA group.
-#  TODO: Update/test Network with NHDPlusHR.
 
 
 # Helper file with all imports, globals variables, helper fn, classes
@@ -503,8 +494,7 @@ class MergeData(object):
 
       # final dissolve
       printMsg("Dissolving polygons on all attributes...")
-      dlist = initDissList
-      dlist.remove(fldSFRACalc.Name)
+      dlist = [a for a in initDissList if a != fldSFRACalc.Name]
       arcpy.Dissolve_management(temp1, outPolys, dlist, multi_part="SINGLE_PART")
 
       return outPolys
