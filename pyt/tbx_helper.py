@@ -557,8 +557,9 @@ def tbackInLoop():
 def unique_values(table, field):
    ''' Gets list of unique values in a field.
    Thanks, ArcPy Cafe! https://arcpy.wordpress.com/2012/02/01/create-a-list-of-unique-field-values/'''
-   with arcpy.da.SearchCursor(table, [field]) as cursor:
-      return sorted({row[0] for row in cursor})
+   val = [r[0] for r in arcpy.da.SearchCursor(table, [field])]
+   uv = list(set(val))
+   return uv
 
 
 def make_gdb(path):
@@ -583,6 +584,8 @@ def make_gdb(path):
 
 def make_gdb_name(string):
    '''Makes strings GDB-compliant'''
+   while not string[0].isalpha():
+      string = string[1:len(string)]
    nm = re.sub('[^A-Za-z0-9]+', '_', string)
    return nm
 

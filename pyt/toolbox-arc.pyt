@@ -428,7 +428,7 @@ class MergeData(object):
       arcpy.CreateFeatureclass_management(scratchGDB, 'merged_temp', template=template_fc, spatial_reference=sr)
       temp = scratchGDB + os.sep + 'merged_temp'
 
-      # exlcude those with use = 0
+      # exlcude those with use != 1
       lyr_ls = [arcpy.MakeFeatureLayer_management(a, where_clause=fldUse.Name + " = 1") for a in inList]
       p = arcpy.Merge_management(lyr_ls, scratchGDB + os.sep + 'mergePrep')
       arcpy.Append_management(p, temp, "NO_TEST")
@@ -437,14 +437,9 @@ class MergeData(object):
 
       # check/set RA values
       rau = unique_values(temp, fldSFRACalc.Name)
-      notin = list()
-      for r in rau:
-         if str(r) not in ['Very High', 'High', 'Medium', 'Low', 'Very Low']:
-            notin.append(r)
-      if len(notin) > 0:
-         printWrng("Some '" + fldSFRACalc.Name + "' values not in allowed RA values. These will receive an '" + fldRA.Name + "' value of 0.")
+      if not all([r in ['Very High', 'High', 'Medium', 'Low', 'Very Low'] for r in rau]):
+         printWrng("Some '" + fldSFRACalc.Name + "' values are missing or are not in allowed RA values. These will receive an '" + fldRA.Name + "' value of 0.")
          # return?
-      # ra_logic = """
       def sfra_fn(sfra):
          if sfra == 'Very High':
             return 5
@@ -487,8 +482,6 @@ class MergeData(object):
             row[0] = 0
             row[1] = 'Spatial duplicate'
             curs.updateRow(row)
-         # arcpy.CalculateField_management(lyr, fldUse.Name, '0')
-         # arcpy.CalculateField_management(lyr, fldUseWhy.Name, "'Spatial duplicate'")
          arcpy.SelectLayerByAttribute_management(lyr, "CLEAR_SELECTION")
          del lyr
 
