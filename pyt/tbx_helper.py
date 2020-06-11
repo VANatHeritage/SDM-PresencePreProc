@@ -64,8 +64,13 @@ def getStdDate(Date):
    p4 = re.compile(r'^[0-9][0-9]?/[0-9][0-9]?/[1-2][0-9][0-9][0-9]$') # m/d/yyyy or mm/dd/yyyy
    p4m = re.compile(r'^[0-9][0-9]?/') # to extract month
    p4d = re.compile(r'/[0-9][0-9]?/') # to extract day
-   
-   Date = str(Date)
+
+   if type(Date) == datetime:
+      # arcgis date fields are datetime types
+      Date = str(Date.date())
+   else:
+      Date = str(Date)
+
    if p1.match(Date):
       yyyy = p1.match(Date).group()[:4]
       mm = p1.match(Date).group()[5:7]
