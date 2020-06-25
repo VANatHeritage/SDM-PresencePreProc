@@ -318,8 +318,8 @@ def SpatialClusterNetwork(species_pt, species_ln, species_py, flowlines, catchme
                           output_lines):
    '''Clusters features based on specified search distance across a linear network dataset.
    Features within the search distance of each other will be assigned to the same group.
-   inFeats = The input features to group
-   sepDist = The distance with which to group features
+   :param species_pt, species_ln, species_py = The input features to group
+   :param sepDist = The distance with which to group features
    Adapted from script by Molly Moore, PANHP'''
 
    # testing
@@ -336,8 +336,8 @@ def SpatialClusterNetwork(species_pt, species_ln, species_py, flowlines, catchme
    species_lyrs = []
 
    arcpy.AddMessage('Generating points to use in network analysis...')
-   # This process also attributes points with flowline IDs (NHDPlusID in NHDPlusHR)
-   # convert multipart points to singlepart
+   # This process also attributes points with flowline IDs (NHDPlusID in NHDPlusHR),
+   #  using catchments (NOT nearest flowline).
    if species_pt:
       arcpy.MultipartToSinglepart_management(species_pt, "pts0")
       pts = arcpy.Identity_analysis('pts0', catchments, 'ptcats', "NO_FID")
@@ -379,7 +379,7 @@ def SpatialClusterNetwork(species_pt, species_ln, species_py, flowlines, catchme
             i += 1
 
    # delete identical points
-   arcpy.DeleteIdentical_management(species_pt, "Shape", None, 0)
+   arcpy.DeleteIdentical_management(species_pt, "Shape")
 
    arcpy.AddMessage("Creating service area line layer...")
    pyvers = sys.version_info.major
@@ -451,12 +451,12 @@ def SpatialClusterNetwork(species_pt, species_ln, species_py, flowlines, catchme
                                        join_type="KEEP_ALL", match_option="CLOSEST", search_radius=snap_dist,
                                        distance_field_name="")
    # join field to original dataset
-   join_field = [field.name for field in arcpy.ListFields(s_join)]
-   join_field = join_field[-1]
-   arcpy.JoinField_management(species_pt, "temp_join_id", s_join, "temp_join_id", join_field)
+   # join_field = [field.name for field in arcpy.ListFields(s_join)]
+   # join_field = join_field[-1]
+   arcpy.JoinField_management(species_pt, "temp_join_id", s_join, "temp_join_id", group_id)
 
    # delete null groups to get rid of observations that were beyond snap_dist
-   with arcpy.da.UpdateCursor(species_pt, join_field) as cursor:
+   with arcpy.da.UpdateCursor(species_pt, group_id) as cursor:
       for row in cursor:
          if row[0] is None:
             cursor.deleteRow()
@@ -538,8 +538,19 @@ def SpatialClusterNetwork(species_pt, species_ln, species_py, flowlines, catchme
                                                os.path.basename(output_lines), "#", mapS)
    # append group IDs to original datasets
    if species_py:
-      species_pt = arcpy.DeleteIdentical_management(species_pt, [fldFeatID.Name, group_id])
-      JoinFields(species_py, fldFeatID.Name, species_pt, fldFeatID.Name, [fldGrpID.Name])
+      # species_pt = arcpy.DeleteIdentical_management(species_pt, [fldFeatID.Name, group_id])
+      # JoinFields(species_py, fldFeatID.Name, species_pt, fldFeatID.Name, [fldGrpID.Name])
+      arcpy.Statistics_analysis(species_pt, 'pt_join_py', [[fldGrpID.Name, 'COUNT']], [fldFeatID.Name, fldGrpID.Name])
+      u = [a[0] for a in arcpy.da.SearchCursor('pt_join_py', fldFeatID.Name)]
+      u2 = [str(a) for a in list(set(u)) if u.count(a) > 1]
+      if len(u2) > 0:
+         arcpy.Sort_management('pt_join_py', 'pt_join_py2', [['COUNT_' + fldGrpID.Name, 'Ascending']])
+         printMsg('One or more features cover multiple occurrence groups (' + fldFeatID.Name + ' in [' + ','.join(u2) +
+                  ']). The most common group ID among feature input points will be assigned to the polygon(s).')
+         jn = 'pt_join_py2'
+      else:
+         jn = 'pt_join_py'
+      arcpy.JoinField_management(species_py, fldFeatID.Name, jn, fldFeatID.Name, fldGrpID.Name)
 
    return species_py
 

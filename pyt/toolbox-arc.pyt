@@ -12,8 +12,8 @@ Created on Thu May 10 11:52:23 2018
 
 # Helper file with all imports, globals variables, helper fn, classes
 from tbx_helper import *
-# Template dataset
-template_fc = os.path.dirname(os.path.abspath(__file__)) + os.sep + 'template.gdb\\sdm_merged_template'
+# Template dataset (empty dataset with desired fields, used in MergeData)
+template_fc = os.path.dirname(os.path.abspath(__file__)) + os.sep + 'template.gdb' + os.sep + 'sdm_merged_template'
 
 class Toolbox(object):
    def __init__(self):
@@ -181,8 +181,7 @@ class AddInitFlds(object):
             fldID = str(a1.Name)
             break
 
-      # Faster calculation-testing
-      # Need to set no-calc fields [#] to a field. They won't get calculated though
+      # Need to set no-calc fields [#] to an existing field. They won't get calculated though
       if fldEO == "#":
          fldEO = fldID
       if fldSF == "#":
@@ -215,101 +214,7 @@ class AddInitFlds(object):
             row[14] = 1
          curs.updateRow(row)
 
-      # # Populate some fields
-      # # table fid (object/fid)
-      # expression = "!%s!" % (fldID)
-      # arcpy.CalculateField_management(outPolys, fldSrcFID.Name, expression, 'PYTHON')
-      # printMsg('Unique ID field populated.')
-      #
-      # # Source table
-      # expression = "'%s'" % srcTab
-      # arcpy.CalculateField_management(outPolys, fldSrcTab.Name, expression, 'PYTHON')
-      # printMsg('Source table field set to "%s".' % srcTab)
-      #
-      # # Species Code
-      # expression = "'%s'" % spCode
-      # arcpy.CalculateField_management(outPolys, fldSpCode.Name, expression, 'PYTHON')
-      # printMsg('Species code field set to "%s".' % spCode)
-
-      # use
-      # arcpy.CalculateField_management(outPolys, fldUse.Name, '1', "PYTHON")
-
-      # EO_ID and SF_ID
-      # if fldEO != "#" and str(fldEO) != str(fldEOID.Name):
-      #    expression = "!%s!" % fldEO
-      #    arcpy.CalculateField_management(outPolys, fldEOID.Name, expression, 'PYTHON')
-      #    printMsg('%s field set to "%s".' % (fldEOID.Name, fldEO))
-      # if fldSF != "#" and str(fldSF) != str(fldSFID.Name):
-      #    expression = "!%s!" % fldSF
-      #    arcpy.CalculateField_management(outPolys, fldSFID.Name, expression, 'PYTHON')
-      #    printMsg('%s field set to "%s".' % (fldSFID.Name, fldSF))
-      # if fldSFRA != "#":
-      #    expression = "!%s!" % fldSFRA
-      #    arcpy.CalculateField_management(outPolys, fldSFRACalc.Name, expression, 'PYTHON')
-      #    printMsg('%s field set to "%s".' % (fldSFRACalc.Name, fldSFRA))
-
-      # Date
-      # codeblock = """def getStdDate(Date):
-      #    # Import regular expressions module
-      #    import re
-      #
-      #    # Set up some regular expressions for pattern matching dates
-      #    p1 = re.compile(r'^[1-2][0-9][0-9][0-9]-[0-1][0-9]-[0-9][0-9]$') # yyyy-mm-dd
-      #    p2 = re.compile(r'^[1-2][0-9][0-9][0-9]-[0-1][0-9]$') # yyyy-mm
-      #    p3 = re.compile(r'^[1-2][0-9][0-9][0-9]-?$') # yyyy or yyyy-
-      #    p4 = re.compile(r'^[0-9][0-9]?/[0-9][0-9]?/[1-2][0-9][0-9][0-9]$') # m/d/yyyy or mm/dd/yyyy
-      #    p4m = re.compile(r'^[0-9][0-9]?/') # to extract month
-      #    p4d = re.compile(r'/[0-9][0-9]?/') # to extract day
-      #
-      #    Date = str(Date)
-      #    if p1.match(Date):
-      #       yyyy = p1.match(Date).group()[:4]
-      #       mm = p1.match(Date).group()[5:7]
-      #       dd = p1.match(Date).group()[8:10]
-      #    elif p2.match(Date):
-      #       yyyy = p2.match(Date).group()[:4]
-      #       mm = p2.match(Date).group()[5:7]
-      #       dd = '00'
-      #    elif p3.match(Date):
-      #       yyyy = p3.match(Date).group()[:4]
-      #       mm = '00'
-      #       dd = '00'
-      #    elif p4.match(Date):
-      #       # This is a pain in the ass.
-      #       yyyy = p4.match(Date).group()[-4:]
-      #       mm = p4m.search(Date).group().replace('/', '').zfill(2)
-      #       dd = p4d.search(Date).group().replace('/', '').zfill(2)
-      #    else:
-      #       yyyy = '0000'
-      #       mm = '00'
-      #       dd = '00'
-      #
-      #    yyyymmdd = yyyy + '-' + mm + '-' + dd
-      #    return yyyymmdd"""
-      # expression = 'getStdDate(!%s!)' % fldDate
-      # arcpy.CalculateField_management(outPolys, fldDateCalc.Name, expression, 'PYTHON', codeblock)
-      # printMsg('Standard date field populated.')
-      #
-      # # Date certainty (of year)
-      # codeblock = """def flagDate(Date):
-      #    if Date == '0000-00-00':
-      #       return 1
-      #    else:
-      #       return None"""
-      # expression = 'flagDate(!%s!)' % fldDateCalc.Name
-      # arcpy.CalculateField_management(outPolys, fldDateFlag.Name, expression, 'PYTHON', codeblock)
-      # printMsg('Date flag field populated.')
-
-      # arcpy.MakeFeatureLayer_management(outPolys, 'outPolys')
-      # q = "%s NOT IN ('Very High','High','Medium','Low','Very Low')" % fldSFRACalc.Name
-      # arcpy.SelectLayerByAttribute_management('outPolys', 'NEW_SELECTION', q)
-      # arcpy.CalculateField_management('outPolys', fldRAFlag.Name, 1, "PYTHON")
-      # if (int(arcpy.GetCount_management('outPolys')[0]) > 0):
-      #    printMsg(
-      #       "Some RA values are not in the allowed value list and were marked with '%s' = 1. Make sure to edit '%s' column for these rows." % (
-      #       fldRAFlag.Name, fldSFRACalc.Name))
-      # arcpy.SelectLayerByAttribute_management('outPolys', 'CLEAR_SELECTION')
-
+      # Value checks (RA and date)
       ravals =[a[0] for a in arcpy.da.SearchCursor(outPolys, fldRAFlag.Name) if a[0] == 1]
       if len(ravals) > 0:
          printWrng("Some RA values are not in the allowed value list and were marked with `" +
@@ -457,7 +362,6 @@ class MergeData(object):
       for row in curs:
          row[1] = sfra_fn(row[0])
          curs.updateRow(row)
-      # arcpy.CalculateField_management(temp, fldRA.Name, "sfra_fn(!" + fldSFRACalc.Name + "!)", code_block=ra_logic)
 
       # This approach uses count overlapping polys (requires ArcPro 2.5+)
       printMsg('Generating all unique polygons...')
@@ -495,7 +399,7 @@ class MergeData(object):
 
 class GrpOcc(object):
    def __init__(self):
-      self.label = "3. Finalize/Group occurrences"
+      self.label = "3. Finalize and assign groups to occurrences"
       self.description = "Groups occurrences in a merged feature occurrence dataset, " + \
                          "using a seperation distance, optionally across a defined network. " + \
                          "Only points with a sdm_use value of 1 are used."
@@ -620,12 +524,10 @@ class GrpOcc(object):
             # original is joined automatically
             SpatialCluster(inFeats=inPolys2, sepDist=sepDist, fldGrpID=grpFld)
          else:
-            # network analyst
+            # network analyst for aquatic occurrences
             printMsg("Using network grouping with distance of " + str(sepDist))
             network = params[3].valueAsText
             tolerance = params[6].valueAsText
-            # feature to point
-            # inPt = arcpy.FeatureToPoint_management(in_features=inPolys2, out_feature_class= scratchGDB + os.sep + 'facil', point_location="INSIDE")
             arcpy.DeleteField_management(inPolys2, grpFld)
 
             # fixed names in network gdb
@@ -643,8 +545,8 @@ class GrpOcc(object):
 
       uv = unique_values(inPolys2, fldGrpID.Name)
       if '' in uv or ' ' in uv:
-         printWrng(
-            'Some grouping ID values in ' + fldGrpID.Name + ' are empty. Make sure to populate these prior to modeling.')
+         printWrng('Some grouping ID values in ' + fldGrpID.Name +
+                   ' are empty. Make sure to populate these prior to modeling.')
       arcpy.CopyFeatures_management(inPolys2, outPolys)
 
       return outPolys
