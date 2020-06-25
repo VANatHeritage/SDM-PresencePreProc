@@ -45,11 +45,11 @@ class AddInitFlds(object):
          direction="Input")
 
       spCode = arcpy.Parameter(
-         displayName="Species code",
+         displayName="Species biotics ELCODE",
          name="spCode",
          datatype="GPString",
          parameterType="Required",
-         direction="Output")
+         direction="Input")
 
       outFold = arcpy.Parameter(
          displayName="Output folder for geodatabase",
@@ -91,7 +91,8 @@ class AddInitFlds(object):
          name="out_features",
          datatype="DEFeatureClass",
          parameterType="Derived",
-         direction="Output")
+         direction="Output",
+         multiValue=True)
 
       fldDate.parameterDependencies = [inPolys.name]
       fldSFRA.parameterDependencies = [inPolys.name]
@@ -111,11 +112,17 @@ class AddInitFlds(object):
       has been changed. Example would be updating field list after a feature 
       class was selected for a parameter."""
       if params[0].altered:
-         f1 = list()
-         f2 = list("#")
-         for f in arcpy.ListFields(params[0].value):
-            f1.append(f.name)
-            f2.append(f.name)
+         v = params[0].value
+         f1 = [f.name for f in arcpy.ListFields(v)]
+         f2 = ["#"] + f1
+         if 'ELCODE' in f1:
+            uval = list(set([a[0] for a in arcpy.da.SearchCursor(v, 'ELCODE')]))
+            if len(uval) > 1:
+               params[1].value = "[multiple]"
+            else:
+               params[1].value = uval[0]
+         # else:
+         # params[1].value = ''
          if 'OBSDATE' in f1 and not params[3].altered:
             params[3].value = 'OBSDATE'
          params[3].filter.list = f1
@@ -141,90 +148,122 @@ class AddInitFlds(object):
       arcpy.env.overwriteOutput = True
 
       inPolys = params[0].valueAsText
-      spCode = params[1].valueAsText
+      elcode = params[1].valueAsText
       outFold = params[2].valueAsText
       fldDate = params[3].valueAsText
       fldSFRA = params[4].valueAsText
       fldEO = params[5].valueAsText
       fldSF = params[6].valueAsText
 
-      outGDB = outFold + os.sep + spCode + '.gdb'
+      if elcode == '[multiple]':
+         # spCode = 'multiSpp_' + datetime.today().strftime('%Y%m%d_%H%m')
+         elcodes = list(set([a[0] for a in arcpy.da.SearchCursor(inPolys, 'ELCODE')]))
+         selFld = 'ELCODE'
+      else:
+         if elcode in [a.name for a in arcpy.ListFields(inPolys)]:
+            elcodes = list(set([a[0] for a in arcpy.da.SearchCursor(inPolys, elcode)]))
+            selFld = elcode
+         else:
+            elcodes = [elcode]
+            selFld = None
 
-      # check if polygon type
-      if not make_gdb(outGDB):
-         printErr('Invalid input geodatabase path. Make sure it has a ".gdb" extension.')
-         return
-      if arcpy.Describe(inPolys).shapeType != 'Polygon':
-         raise Exception('Input dataset is not of type Polygon. Convert to polygon and re-run.')
+      outList = []
+      for el in elcodes:
 
-      # get source table name
-      srcTab = arcpy.Describe(inPolys).Name
-      srcTab = srcTab.replace('.shp', '')
-      srcTab = make_gdb_name(srcTab)
-      outPolys = outGDB + os.sep + srcTab + '_' + spCode
+         spCode = 'unk_' + el
+         for r in csv.DictReader(open(sp_code_lookup)):
+            if r['ELCODE_BCD'] == el:
+               spCode = r['sp_code_calc']
+               break
+         outGDB = outFold + os.sep + spCode + '.gdb'
 
-      params[7].value = outPolys
+         # check if polygon type
+         if not make_gdb(outGDB):
+            printErr('Invalid input geodatabase path. Make sure it has a ".gdb" extension.')
+            return
+         if arcpy.Describe(inPolys).shapeType != 'Polygon':
+            raise Exception('Input dataset is not of type Polygon. Convert to polygon and re-run.')
 
-      # Make a fresh copy of the data
-      arcpy.CopyFeatures_management(inPolys, outPolys)
+         # get source table name
+         srcTab = arcpy.Describe(inPolys).Name
+         srcTab = srcTab.replace('.shp', '')
+         srcTab = make_gdb_name(srcTab)
+         outPolys = outGDB + os.sep + srcTab + '_' + spCode
 
-      # Add all the initial fields
-      printMsg('Adding fields...')
-      # do not try to add fields that already exist
-      existFld = [f.name for f in arcpy.ListFields(outPolys)]
-      toAdd = [a for a in initFieldsFull if a[0] not in existFld]
-      arcpy.AddFields_management(outPolys, toAdd)
+         # Make a fresh copy of the data
+         if selFld:
+            arcpy.Select_analysis(inPolys, outPolys, selFld + " = '" + el + "'")
+         else:
+            arcpy.CopyFeatures_management(inPolys, outPolys)
 
-      a = arcpy.Describe(outPolys).Fields
-      for a1 in a:
-         if a1.Type == 'OID':
-            fldID = str(a1.Name)
-            break
+         # Add all the initial fields
+         printMsg('Adding fields...')
+         # do not try to add fields that already exist
+         existFld = [f.name for f in arcpy.ListFields(outPolys)]
+         toAdd = [a for a in initFieldsFull if a[0] not in existFld]
+         arcpy.AddFields_management(outPolys, toAdd)
 
-      # Need to set no-calc fields [#] to an existing field. They won't get calculated though
-      if fldEO == "#":
-         fldEO = fldID
-      if fldSF == "#":
-         fldSF = fldID
-      if fldSFRA == "#":
-         fldSFRA = fldID
+         a = arcpy.Describe(outPolys).Fields
+         for a1 in a:
+            if a1.Type == 'OID':
+               fldID = str(a1.Name)
+               break
 
-      printMsg('Calculating fields...')
-      fldlist = [fldID, fldSrcFID.Name, fldSrcTab.Name, fldSpCode.Name, fldUse.Name,
-                 fldEO, fldEOID.Name, fldSF, fldSFID.Name, fldSFRA, fldSFRACalc.Name, fldRAFlag.Name,
-                 fldDate, fldDateCalc.Name, fldDateFlag.Name]
-      curs = arcpy.da.UpdateCursor(outPolys, fldlist)
-      for row in curs:
-         row[1] = row[0]
-         row[2] = srcTab
-         row[3] = spCode
-         row[4] = '1'
-         if fldEO != fldID and str(fldEO) != str(fldEOID.Name):
-            row[6] = row[5]
-         if fldSF != fldID and str(fldSF) != str(fldSFID.Name):
-            row[8] = row[7]
-         if fldSFRA != fldID:
-            row[10] = row[9]
-            if row[9] not in ['Very High', 'High', 'Medium', 'Low', 'Very Low']:
-               row[11] = 1
-         # date
-         date2 = getStdDate(row[12])
-         row[13] = date2
-         if date2 == '0000-00-00':
-            row[14] = 1
-         curs.updateRow(row)
+         # Need to set no-calc fields [#] to an existing field. They won't get calculated though
+         if fldEO == "#":
+            fldEO = fldID
+         if fldSF == "#":
+            fldSF = fldID
+         if fldSFRA == "#":
+            fldSFRA = fldID
 
-      # Value checks (RA and date)
-      ravals =[a[0] for a in arcpy.da.SearchCursor(outPolys, fldRAFlag.Name) if a[0] == 1]
-      if len(ravals) > 0:
-         printWrng("Some RA values are not in the allowed value list and were marked with `" +
-                   fldRAFlag.Name + "` = 1. Make sure to edit `" + fldSFRACalc.Name + "` column for these rows.")
-      datevals = [a[0] for a in arcpy.da.SearchCursor(outPolys, fldDateFlag.Name) if a[0] == 1]
-      if len(datevals) > 0:
-         printWrng("Some date values were not able to be calculated and were marked with `" +
-                   fldDateFlag.Name + "` = 1. Make sure to edit `" + fldDateCalc.Name + "` column for these rows.")
+         printMsg('Calculating fields...')
+         fldlist = [fldID, fldSrcFID.Name, fldSrcTab.Name, fldSpCode.Name, fldUse.Name,
+                    fldEO, fldEOID.Name, fldSF, fldSFID.Name, fldSFRA, fldSFRACalc.Name, fldRAFlag.Name,
+                    fldDate, fldDateCalc.Name, fldDateFlag.Name]
+         # if elcode == '[multiple]':
+         #   fldlist.append('ELCODE')
+         curs = arcpy.da.UpdateCursor(outPolys, fldlist)
+         for row in curs:
+            row[1] = row[0]
+            row[2] = srcTab
+            # if elcode == '[multiple]':
+            #    for r in csv.DictReader(open(sp_code_lookup)):
+            #       if r['ELCODE_BCD'] == row[15]:
+            #          row[3] = r['sp_code_calc']
+            #          break
+            # else:
+            row[3] = spCode
+            row[4] = '1'
+            if fldEO != fldID and str(fldEO) != str(fldEOID.Name):
+               row[6] = row[5]
+            if fldSF != fldID and str(fldSF) != str(fldSFID.Name):
+               row[8] = row[7]
+            if fldSFRA != fldID:
+               row[10] = row[9]
+               if row[9] not in ['Very High', 'High', 'Medium', 'Low', 'Very Low']:
+                  row[11] = 1
+            # date
+            date2 = getStdDate(row[12])
+            row[13] = date2
+            if date2 == '0000-00-00':
+               row[14] = 1
+            curs.updateRow(row)
 
-      return outPolys
+         # Value checks (RA and date)
+         ravals =[a[0] for a in arcpy.da.SearchCursor(outPolys, fldRAFlag.Name) if a[0] == 1]
+         if len(ravals) > 0:
+            printWrng("Some RA values are not in the allowed value list and were marked with `" +
+                      fldRAFlag.Name + "` = 1. Make sure to edit `" + fldSFRACalc.Name + "` column for these rows.")
+         datevals = [a[0] for a in arcpy.da.SearchCursor(outPolys, fldDateFlag.Name) if a[0] == 1]
+         if len(datevals) > 0:
+            printWrng("Some date values were not able to be calculated and were marked with `" +
+                      fldDateFlag.Name + "` = 1. Make sure to edit `" + fldDateCalc.Name + "` column for these rows.")
+
+         outList = outList + [outPolys]
+
+      params[7].value = outList
+      return outList
 
 
 class MergeData(object):

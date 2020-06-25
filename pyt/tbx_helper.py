@@ -6,12 +6,13 @@ import os
 import re
 import sys
 import traceback
+import csv
 from datetime import datetime as datetime
 
 arcpy.CheckOutExtension("Spatial")
 scratchGDB = r'C:\David\scratch\sdmPresencePreProc.gdb'
-# scratchGDB = arcpy.env.scratchGDB
-# scratchGDB = "in_memory"
+curr_dir = os.path.dirname(os.path.abspath(__file__))
+sp_code_lookup = os.path.join(curr_dir, "data", "codes.csv")
 
 ### Define the fields to add
 class Field:
@@ -21,7 +22,7 @@ class Field:
       self.Length = Length
 
 # Initial fields for editing
-fldSpCode = Field('sp_code', 'TEXT', 12)  # Code to identify species. Example: 'clemaddi'. If subspecies, use 12 letters
+fldSpCode = Field('sp_code', 'TEXT', 20)  # Code to identify species. Example: 'clemaddi'. If subspecies, use 12 letters
 fldSrcTab = Field('src_table', 'TEXT', 50)  # Code to identify source dataset. Example: 'biotics'
 fldSrcFID = Field('src_fid', 'LONG', '')  # original source table FID (auto-populated)
 fldSFID = Field('src_featid', 'LONG', '')  # original feature's SFID or similar (Source feature ID in Biotics)
@@ -581,20 +582,20 @@ def unique_values(table, field):
 def make_gdb(path):
    ''' Creates a geodatabase if it doesn't exist'''
    path = path.replace("\\", "/")
-   if '.gdb' not in path:
-      printMsg("Bad geodatabase path name.")
-      return False
-   folder = path[0:path.rindex("/")]
-   name = path[(path.rindex("/") + 1):len(path)]
+   folder = os.path.dirname(path)
+   name = make_gdb_name(os.path.basename(path).replace('.gdb', '')) + '.gdb'
+   path = folder + '/' + name
    if not os.path.exists(path):
       try:
          arcpy.CreateFileGDB_management(folder, name)
       except:
+         printMsg("Geodatabase '" + path + "' could not be created.")
          return False
       else:
          printMsg("Geodatabase '" + path + "' created.")
          return True
    else:
+      printMsg("Geodatabase '" + path + "' already exists.")
       return True
 
 
