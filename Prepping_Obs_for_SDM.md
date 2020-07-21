@@ -1,5 +1,7 @@
 # Prepping species observations for SDM
 
+***Needs update***
+
 Author: David Bucklin
 
 Last updated: 2018-11-02
@@ -9,7 +11,7 @@ Last updated: 2018-11-02
 - copy folder `I:\DATA_MGT\Division\SDM\TrainingData\_ArcToolbox\sdm_obs_prep_arcToolbox` to your computer
 - Open ArcMap, and open list of Toolboxes
 - Right click ArcToolbox at the top, and click `Add Toolbox`.
-- navigate to where you copied the folder, and add `toolbox-arc.pyt`.
+- navigate to where you copied the folder, and add `SDM-PresencePreProcessing.pyt`.
 - The name of the toolbox in your list is **SDM Training Data Prep**
 - Right click `ArcToolbox -> Save Settings -> To Default` and the toolbox will remain in the Toolbox list from now on
 
