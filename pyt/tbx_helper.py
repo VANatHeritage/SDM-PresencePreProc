@@ -12,7 +12,6 @@ from datetime import datetime as datetime
 arcpy.CheckOutExtension("Spatial")
 scratchGDB = r'C:\David\scratch\sdmPresencePreProc.gdb'
 curr_dir = os.path.dirname(os.path.abspath(__file__))
-sp_code_lookup = os.path.join(curr_dir, "data", "codes.csv")
 
 ### Define the fields to add
 class Field:

@@ -13,7 +13,8 @@ Created on Thu May 10 11:52:23 2018
 # Helper file with all imports, globals variables, helper fn, classes
 from tbx_helper import *
 # Template dataset (empty dataset with desired fields, used in MergeData)
-template_fc = os.path.dirname(os.path.abspath(__file__)) + os.sep + 'template.gdb' + os.sep + 'sdm_merged_template'
+template_fc = os.path.join(curr_dir, 'data', 'template.gdb', 'sdm_merged_template')
+sp_code_lookup = os.path.join(curr_dir, 'data', 'codes.csv')
 
 class Toolbox(object):
    def __init__(self):
@@ -45,14 +46,14 @@ class AddInitFlds(object):
          direction="Input")
 
       spCode = arcpy.Parameter(
-         displayName="Species biotics ELCODE",
+         displayName="Unique species ELCODE (auto-populated if ELCODE column exists)",
          name="spCode",
          datatype="GPString",
          parameterType="Required",
          direction="Input")
 
       outFold = arcpy.Parameter(
-         displayName="Output folder for geodatabase",
+         displayName="Output folder for geodatabase(s)",
          name="outFold",
          datatype="DEFolder",
          parameterType="Required",
@@ -111,7 +112,7 @@ class AddInitFlds(object):
       validation is performed.  This method is called whenever a parameter
       has been changed. Example would be updating field list after a feature 
       class was selected for a parameter."""
-      if params[0].altered:
+      if params[0].altered and not params[0].hasBeenValidated:
          v = params[0].value
          f1 = [f.name for f in arcpy.ListFields(v)]
          f2 = ["#"] + f1
@@ -123,17 +124,17 @@ class AddInitFlds(object):
                params[1].value = uval[0]
          # else:
          # params[1].value = ''
-         if 'OBSDATE' in f1 and not params[3].altered:
+         if 'OBSDATE' in f1:  # and not params[3].altered:
             params[3].value = 'OBSDATE'
          params[3].filter.list = f1
-         if 'SFRA' in f1 and not params[4].altered:
+         if 'SFRA' in f1:  # and not params[4].altered:
             params[4].value = 'SFRA'
          params[4].filter.list = f2
-         if 'EO_ID' in f1 and not params[5].altered:
-            params[5].value = 'EO_ID'
+         if 'SF_EOID' in f1:  # and not params[5].altered:
+            params[5].value = 'SF_EOID'
          params[5].filter.list = f2
-         if 'SF_ID' in f1 and not params[6].altered:
-            params[6].value = 'SF_ID'
+         if 'SFID' in f1:  # and not params[6].altered:
+            params[6].value = 'SFID'
          params[6].filter.list = f2
       return
 
@@ -175,6 +176,8 @@ class AddInitFlds(object):
             if r['ELCODE_BCD'] == el:
                spCode = r['sp_code_calc']
                break
+         # species codes must be 20 characters or less
+         spCode = make_gdb_name(spCode)[0:20]
          outGDB = outFold + os.sep + spCode + '.gdb'
 
          # check if polygon type
@@ -190,7 +193,7 @@ class AddInitFlds(object):
          srcTab = make_gdb_name(srcTab)
          outPolys = outGDB + os.sep + srcTab + '_' + spCode
 
-         # Make a fresh copy of the data
+         # Make a fresh copy of the data, selecting subset if multiple spp.
          if selFld:
             arcpy.Select_analysis(inPolys, outPolys, selFld + " = '" + el + "'")
          else:
@@ -243,6 +246,8 @@ class AddInitFlds(object):
                row[10] = row[9]
                if row[9] not in ['Very High', 'High', 'Medium', 'Low', 'Very Low']:
                   row[11] = 1
+            else:
+               row[11] = 1
             # date
             date2 = getStdDate(row[12])
             row[13] = date2
@@ -286,17 +291,17 @@ class MergeData(object):
          direction="Input")
 
       outPolys = arcpy.Parameter(
-         displayName="Output feature class (must be in geodatabase)",
+         displayName="Output feature class",
          name="outPolys",
          datatype="DEFeatureClass",
          parameterType="Derived",
          direction="Output")
 
       inList = arcpy.Parameter(
-         displayName="List of feature classes - if none selected, all will be used",
+         displayName="List of feature classes to include",
          name="inList",
          datatype="GPString",
-         parameterType="Optional",
+         parameterType="Required",
          direction="Input",
          multiValue=True)
 
@@ -322,10 +327,13 @@ class MergeData(object):
       has been changed. Example would be updating field list after a feature 
       class was selected for a parameter."""
 
-      if params[0].value:
-         arcpy.env.workspace = params[0].valueAsText
+      if params[0].altered and not params[0].hasBeenValidated:
+         spp = params[0].valueAsText
+         arcpy.env.workspace = spp
          f1 = arcpy.ListFeatureClasses(feature_type='Polygon')
+         f1 = [f for f in f1 if not f.startswith(os.path.basename(spp).replace('.gdb', '') + '_merged')]
          params[2].filter.list = f1
+         params[2].value = f1
 
       # if (params[0].value and not params[1].altered) or (params[0].value and not params[0].hasBeenValidated):
       #   # run only if new value
@@ -350,18 +358,13 @@ class MergeData(object):
       outPolysNm = str(arcpy.Describe(inGDB).name.replace('.gdb', '')) + '_merged_' + today
       outPolys = str(inGDB) + os.sep + outPolysNm
       params[1].value = outPolys
-      if params[2].value:
-         inList = (params[2].valueAsText).split(';')
-      else:
-         inList = "#"
+      inList = (params[2].valueAsText).split(';')
       if params[3].value:
          spatialRef = params[3].valueAsText
       else:
          spatialRef = "#"
 
       arcpy.env.workspace = inGDB
-      if inList == "#":
-         inList = arcpy.ListFeatureClasses()
       # Get spatial reference from first feature class in list.
       if spatialRef == '#':
          sr = arcpy.Describe(inList[0]).spatialReference
