@@ -10,7 +10,9 @@ import csv
 from datetime import datetime as datetime
 
 arcpy.CheckOutExtension("Spatial")
-scratchGDB = r'C:\David\scratch\sdmPresencePreProc.gdb'
+scratchGDB = arcpy.env.scratchFolder + os.sep + 'sdmPresencePreProc.gdb'  # r'C:\David\scratch\sdmPresencePreProc.gdb'
+if not os.path.exists(scratchGDB):
+   arcpy.CreateFileGDB_management(os.path.dirname(scratchGDB), os.path.basename(scratchGDB))
 curr_dir = os.path.dirname(os.path.abspath(__file__))
 
 ### Define the fields to add
@@ -21,7 +23,7 @@ class Field:
       self.Length = Length
 
 # Initial fields for editing
-fldSpCode = Field('sp_code', 'TEXT', 20)  # Code to identify species. Example: 'clemaddi'. If subspecies, use 12 letters
+fldSpCode = Field('sp_code', 'TEXT', 20)  # Code to identify species. Example: 'clemaddi'. If subspecies, use trinomial
 fldSrcTab = Field('src_table', 'TEXT', 50)  # Code to identify source dataset. Example: 'biotics'
 fldSrcFID = Field('src_fid', 'LONG', '')  # original source table FID (auto-populated)
 fldSFID = Field('src_featid', 'LONG', '')  # original feature's SFID or similar (Source feature ID in Biotics)
@@ -103,7 +105,7 @@ def getStdDate(Date):
 
 
 def copyFld(lyr, fieldIn, fieldOut):
-   '''Copy values from one field to another new field'''
+   """Copy values from one field to another new field"""
    with arcpy.da.UpdateCursor(lyr, [fieldIn, fieldOut]) as cursor:
       for row in cursor:
          row[1] = row[0]
@@ -111,13 +113,13 @@ def copyFld(lyr, fieldIn, fieldOut):
 
 
 def countFeatures(features):
-   '''Gets count of features'''
+   """Gets count of features"""
    count = int((arcpy.GetCount_management(features)).getOutput(0))
    return count
 
 
 def garbagePickup(trashList):
-   '''Deletes Arc files in list, with error handling. Argument must be a list.'''
+   """Deletes Arc files in list, with error handling. Argument must be a list."""
    for t in trashList:
       try:
          arcpy.Delete_management(t)
@@ -192,14 +194,14 @@ def ProjectToMatch(fcTarget, csTemplate):
 
 
 def JoinFields(ToTab, fldToJoin, FromTab, fldFromJoin, addFields):
-   '''An alternative to arcpy's JoinField_management.
+   """An alternative to arcpy's JoinField_management.
    Note that this method is best for small 'FromTab' tables and one-two join fields.
 
    ToTab = The table to which fields will be added
    fldToJoin = The key field in ToTab, used to match records in FromTab
    FromTab = The table from which fields will be copied
    fldFromJoin = the key field in FromTab, used to match records in ToTab
-   addFields = the list of fields to be added'''
+   addFields = the list of fields to be added"""
 
    def getFldVal(srcID, fldDict):
       try:
@@ -249,10 +251,10 @@ def JoinFields(ToTab, fldToJoin, FromTab, fldFromJoin, addFields):
 
 
 def SpatialCluster(inFeats, sepDist, fldGrpID='grpID'):
-   '''Clusters features based on specified search distance. Features within twice the search distance of each other will be assigned to the same group.
+   """Clusters features based on specified search distance. Features within twice the search distance of each other will be assigned to the same group.
    inFeats = The input features to group
    sepDist = The search distance to use for clustering.
-   fldGrpID = The desired name for the output grouping field. If not specified, it will be "grpID".'''
+   fldGrpID = The desired name for the output grouping field. If not specified, it will be "grpID"."""
 
    # set sepDist
    sd0 = sepDist.split(" ")
@@ -316,11 +318,11 @@ def SpatialCluster(inFeats, sepDist, fldGrpID='grpID'):
 # internal spatial clustering function over network dataset
 def SpatialClusterNetwork(species_pt, species_ln, species_py, flowlines, catchments, network, dams, sep_dist, snap_dist,
                           output_lines):
-   '''Clusters features based on specified search distance across a linear network dataset.
+   """Clusters features based on specified search distance across a linear network dataset.
    Features within the search distance of each other will be assigned to the same group.
    :param species_pt, species_ln, species_py = The input features to group
    :param sepDist = The distance with which to group features
-   Adapted from script by Molly Moore, PANHP'''
+   Adapted from script by Molly Moore, PANHP"""
 
    # testing
    # network = r'F:\David\GIS_data\NHDPlus_HR\VA_HydroNetHR.gdb\HydroNet\HydroNet_ND'
@@ -556,7 +558,7 @@ def SpatialClusterNetwork(species_pt, species_ln, species_py, flowlines, catchme
 
 
 def tbackInLoop():
-   '''Standard error handling routing to add to bottom of scripts'''
+   """Standard error handling routing to add to bottom of scripts"""
    tb = sys.exc_info()[2]
    tbinfo = traceback.format_tb(tb)[0]
    pymsg = "PYTHON ERRORS:\nTraceback Info:\n" + tbinfo + "\nError Info:\n " + str(sys.exc_info()[1])
@@ -571,15 +573,15 @@ def tbackInLoop():
 
 
 def unique_values(table, field):
-   ''' Gets list of unique values in a field.
-   Thanks, ArcPy Cafe! https://arcpy.wordpress.com/2012/02/01/create-a-list-of-unique-field-values/'''
+   """ Gets list of unique values in a field.
+   Thanks, ArcPy Cafe! https://arcpy.wordpress.com/2012/02/01/create-a-list-of-unique-field-values/"""
    val = [r[0] for r in arcpy.da.SearchCursor(table, [field])]
    uv = list(set(val))
    return uv
 
 
 def make_gdb(path):
-   ''' Creates a geodatabase if it doesn't exist'''
+   """ Creates a geodatabase if it doesn't exist"""
    path = path.replace("\\", "/")
    folder = os.path.dirname(path)
    name = make_gdb_name(os.path.basename(path).replace('.gdb', '')) + '.gdb'
@@ -599,7 +601,7 @@ def make_gdb(path):
 
 
 def make_gdb_name(string):
-   '''Makes strings GDB-compliant'''
+   """Makes strings GDB-compliant"""
    while not string[0].isalpha():
       string = string[1:len(string)]
    nm = re.sub('[^A-Za-z0-9]+', '_', string)
@@ -608,9 +610,9 @@ def make_gdb_name(string):
 
 # used in MergeData
 def GetOverlapping(inList, outPolys, summFlds=None):
-   '''Internal function for MergeData. Generates all unique polygons from list of one or more polygon FCs.
+   """Internal function for MergeData. Generates all unique polygons from list of one or more polygon FCs.
    If summFlds is provided, final dataset will be 'flat' (no overlap), with only ID, Count, and summary
-   fields returned.'''
+   fields returned."""
 
    # unique polygon ID to assign to new 'flat' dataset
    polyID = 'uniqID_poly'

@@ -4,6 +4,5 @@
 .idea/
 
 # specific files
-pyt/data/code_list.py
-pyt/spp_GDBs.py
-pyt/NetworkDatasets_instructions.txt
+data/code_list.py
+NetworkDatasets_instructions.txt

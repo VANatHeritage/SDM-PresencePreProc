@@ -124,16 +124,16 @@ class AddInitFlds(object):
                params[1].value = uval[0]
          # else:
          # params[1].value = ''
-         if 'OBSDATE' in f1:  # and not params[3].altered:
+         if 'OBSDATE' in f1 and not params[3].altered:
             params[3].value = 'OBSDATE'
          params[3].filter.list = f1
-         if 'SFRA' in f1:  # and not params[4].altered:
+         if 'SFRA' in f1 and not params[4].altered:
             params[4].value = 'SFRA'
          params[4].filter.list = f2
-         if 'SF_EOID' in f1:  # and not params[5].altered:
+         if 'SF_EOID' in f1 and not params[5].altered:
             params[5].value = 'SF_EOID'
          params[5].filter.list = f2
-         if 'SFID' in f1:  # and not params[6].altered:
+         if 'SFID' in f1 and not params[6].altered:
             params[6].value = 'SFID'
          params[6].filter.list = f2
       return
@@ -489,7 +489,8 @@ class GrpOcc(object):
          name="outPolys",
          datatype="DEFeatureClass",
          parameterType="Derived",
-         direction="Output")
+         direction="Output",
+         multiValue=True)
 
       tolerance = arcpy.Parameter(
          displayName="Maximum distance tolerance",
@@ -538,7 +539,7 @@ class GrpOcc(object):
       d = arcpy.Describe(inPolys)
       outPolys = d.path + os.sep + d.name + '_forSDM'
       outLines = outPolys + '_lines'
-      params[5].value = outPolys
+      params[5].value = [outPolys]
 
       # take use = 1 subset
       inPolys2 = scratchGDB + os.sep + 'inPolys'
@@ -551,6 +552,7 @@ class GrpOcc(object):
             break
 
       copyFld(inPolys2, fldID, fldFeatID.Name)
+      arcpy.DeleteField_management(inPolys2, [fldRAFlag.Name, fldDateFlag.Name])
 
       if params[1].value:
          sepDist = params[1].valueAsText
@@ -566,6 +568,8 @@ class GrpOcc(object):
             # original is joined automatically
             SpatialCluster(inFeats=inPolys2, sepDist=sepDist, fldGrpID=grpFld)
          else:
+            # re-set output
+            params[5].value = [outPolys, outLines]
             # network analyst for aquatic occurrences
             printMsg("Using network grouping with distance of " + str(sepDist))
             network = params[3].valueAsText
@@ -580,9 +584,9 @@ class GrpOcc(object):
                                              flowlines=flowlines, catchments=catchments, network=network, dams=barriers,
                                              sep_dist=sepDist, snap_dist=tolerance, output_lines=outLines)
             # returns inPolys2 with group ID column populated
+
       else:
          # just update column from src_grpid
-         # arcpy.CalculateField_management(inPolys2, fldGrpID.Name, '!' + fldEOID.Name + '!', 'PYTHON')
          copyFld(inPolys2, fldEOID.Name, fldGrpID.Name)
 
       uv = unique_values(inPolys2, fldGrpID.Name)
@@ -591,7 +595,7 @@ class GrpOcc(object):
                    ' are empty. Make sure to populate these prior to modeling.')
       arcpy.CopyFeatures_management(inPolys2, outPolys)
 
-      return outPolys
+      return params[5].value
 
 
 # end
