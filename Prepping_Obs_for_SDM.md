@@ -89,12 +89,3 @@ The resulting file from step 4 will have spatial duplicates identified, in the `
 - After running, use the `sdm_use` column to set reaches that should not be included in the model to `0`.
 
 ---
-
-
-
-
-
-- Still to do:
-  - converts polygons to point for networking grouping: better options for this?
-  - implement barriers for terrestrial grouping?
-
