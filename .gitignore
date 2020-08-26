@@ -5,4 +5,5 @@
 
 # specific files
 data/code_list.py
+data/template.gdb
 NetworkDatasets_instructions.txt
