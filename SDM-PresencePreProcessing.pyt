@@ -116,12 +116,13 @@ class AddInitFlds(object):
          v = params[0].value
          f1 = [f.name for f in arcpy.ListFields(v)]
          f2 = ["#"] + f1
-         if 'ELCODE' in f1:
-            uval = list(set([a[0] for a in arcpy.da.SearchCursor(v, 'ELCODE')]))
-            if len(uval) > 1:
-               params[1].value = "[multiple]"
-            else:
-               params[1].value = uval[0]
+         if not params[1].altered:
+            if 'ELCODE' in f1:
+               uval = list(set([a[0] for a in arcpy.da.SearchCursor(v, 'ELCODE') if a[0] is not None]))
+               if len(uval) > 1:
+                  params[1].value = "[multiple]"
+               else:
+                  params[1].value = uval[0]
          # else:
          # params[1].value = ''
          if 'OBSDATE' in f1 and not params[3].altered:
@@ -162,7 +163,7 @@ class AddInitFlds(object):
          selFld = 'ELCODE'
       else:
          if elcode in [a.name for a in arcpy.ListFields(inPolys)]:
-            elcodes = list(set([a[0] for a in arcpy.da.SearchCursor(inPolys, elcode)]))
+            elcodes = list(set([a[0] for a in arcpy.da.SearchCursor(inPolys, elcode) if a[0] is not None]))
             selFld = elcode
          else:
             elcodes = [elcode]
@@ -170,7 +171,6 @@ class AddInitFlds(object):
 
       outList = []
       for el in elcodes:
-
          spCode = 'unk_' + el
          for r in csv.DictReader(open(sp_code_lookup)):
             if r['ELCODE_BCD'] == el:
@@ -194,7 +194,7 @@ class AddInitFlds(object):
          outPolys = outGDB + os.sep + srcTab + '_' + spCode
 
          # Make a fresh copy of the data, selecting subset if multiple spp.
-         if selFld:
+         if selFld is not None:
             arcpy.Select_analysis(inPolys, outPolys, selFld + " = '" + el + "'")
          else:
             arcpy.CopyFeatures_management(inPolys, outPolys)
@@ -355,7 +355,7 @@ class MergeData(object):
       today = datetime.today().strftime('%Y%m%d')
 
       inGDB = params[0].valueAsText
-      outPolysNm = str(arcpy.Describe(inGDB).name.replace('.gdb', '')) + '_merged_' + today
+      outPolysNm = os.path.basename(str(inGDB)).replace('.gdb', '') + '_merged_' + today
       outPolys = str(inGDB) + os.sep + outPolysNm
       params[1].value = outPolys
       inList = (params[2].valueAsText).split(';')
@@ -411,14 +411,14 @@ class MergeData(object):
       GetOverlapping([temp], temp1)
       # temp1 has fields uniqID_poly and COUNT_.
 
-      # Set = 0 those which are spatial duplicates (sorting by date/ra to find 'best' polygon)
+      # Set = 0 those which are spatial duplicates (sorting by ra/date to find 'best' polygon)
       lyr = arcpy.MakeFeatureLayer_management(temp1, where_clause='COUNT_ > 1')
       if arcpy.GetCount_management(lyr)[0] != '0':
          printMsg('Setting spatial duplicates to ' + fldUse.Name + ' = 0')
-         df = fc2df(lyr, ['OBJECTID', 'uniqID_poly', fldDateCalc.Name, fldRA.Name])
-         # sort decreasing by [date, RA, objectid (in case locations have same date/RA)]
-         dfmax = df.sort_values([fldDateCalc.Name, fldRA.Name, 'OBJECTID'], ascending=False).drop_duplicates('uniqID_poly')
-         # get a list of OIDs for the highest [Date, RA, OBJECTID]
+         df = fc2df(lyr, ['OBJECTID', 'uniqID_poly', fldRA.Name, fldDateCalc.Name])
+         # sort decreasing by [RA, date, objectid (in case locations have same date/RA)]
+         dfmax = df.sort_values([fldRA.Name, fldDateCalc.Name, 'OBJECTID'], ascending=False).drop_duplicates('uniqID_poly')
+         # get a list of OIDs for the highest [RA, Date, OBJECTID]
          oids = list(dfmax.OBJECTID)
          oids = [str(o) for o in oids]
          # set those not in the selected list to use = 0
@@ -434,7 +434,9 @@ class MergeData(object):
       # final dissolve
       printMsg("Dissolving polygons on all attributes...")
       dlist = [a for a in initDissList if a != fldSFRACalc.Name]
-      arcpy.Dissolve_management(temp1, outPolys, dlist, multi_part="SINGLE_PART")
+      arcpy.Dissolve_management(temp1, outPolys, dlist) # , multi_part="SINGLE_PART")
+      # slivers/edges can result from this; leaving as single_part makes it easier to exclude them. Shouldn't be a
+      # problem to keep though, since these will be 'grouped' with adjacent polygon.
 
       return outPolys
 
@@ -443,8 +445,8 @@ class GrpOcc(object):
    def __init__(self):
       self.label = "3. Finalize and assign groups to occurrences"
       self.description = "Groups occurrences in a merged feature occurrence dataset, " + \
-                         "using a seperation distance, optionally across a defined network. " + \
-                         "Only points with a sdm_use value of 1 are used."
+                         "using a separation distance, optionally across a defined network. " + \
+                         "Only features with a sdm_use value of 1 are used."
       self.canRunInBackground = True
 
    def getParameterInfo(self):
@@ -499,9 +501,16 @@ class GrpOcc(object):
          parameterType="Required",
          direction="Input")
       tolerance.value = "100"
+      
+      erase = arcpy.Parameter(
+         displayName="Erase features",
+         name="erase",
+         datatype="GPFeatureLayer",
+         parameterType="Optional",
+         direction="Input")
 
       grpFld.parameterDependencies = [inPolys.name]
-      params = [inPolys, sepDist, grpFld, network, barriers, outPolys, tolerance]
+      params = [inPolys, sepDist, grpFld, network, barriers, outPolys, tolerance, erase]
       return params
 
    def isLicensed(self):
@@ -553,6 +562,7 @@ class GrpOcc(object):
 
       copyFld(inPolys2, fldID, fldFeatID.Name)
       arcpy.DeleteField_management(inPolys2, [fldRAFlag.Name, fldDateFlag.Name])
+      # coulddo: dissolve by adjacency, get highest RA/date?
 
       if params[1].value:
          sepDist = params[1].valueAsText
@@ -593,7 +603,12 @@ class GrpOcc(object):
       if '' in uv or ' ' in uv:
          printWrng('Some grouping ID values in ' + fldGrpID.Name +
                    ' are empty. Make sure to populate these prior to modeling.')
-      arcpy.CopyFeatures_management(inPolys2, outPolys)
+      
+      # Erase or just copy features
+      if params[7].value:
+         arcpy.Erase_analysis(inPolys2, params[7].valueAsText, outPolys)
+      else:
+         arcpy.CopyFeatures_management(inPolys2, outPolys)
 
       return params[5].value
 

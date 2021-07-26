@@ -29,7 +29,7 @@ fldSrcFID = Field('src_fid', 'LONG', '')  # original source table FID (auto-popu
 fldSFID = Field('src_featid', 'LONG', '')  # original feature's SFID or similar (Source feature ID in Biotics)
 fldEOID = Field('src_grpid', 'TEXT', 50)  # original group ID (EO ID in biotics)
 fldUse = Field('sdm_use', 'SHORT', '')  # Binary: Eligible for use in model training (1) or not (0)
-fldUseWhy = Field('sdm_use_why', 'TEXT', 50)  # Comments on eligibility for use
+fldUseWhy = Field('sdm_use_why', 'TEXT', 1000)  # Comments on eligibility for use
 fldDateCalc = Field('sdm_date', 'TEXT', 10)  # Date in standardized yyyy-mm-dd format
 fldDateFlag = Field('sdm_date_flag', 'SHORT', '')  # Flag uncertain year. 0 = certain; 1 = uncertain
 fldRA = Field('sdm_ra', 'SHORT', '')  # Source feature representation accuracy
