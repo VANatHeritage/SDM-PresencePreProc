@@ -125,11 +125,11 @@ class AddInitFlds(object):
                   params[1].value = uval[0]
          # else:
          # params[1].value = ''
-         if 'OBSDATE' in f1 and not params[3].altered:
-            params[3].value = 'OBSDATE'
+         if 'clean_date' in f1 and not params[3].altered:
+            params[3].value = 'clean_date'
          params[3].filter.list = f1
-         if 'SFRA' in f1 and not params[4].altered:
-            params[4].value = 'SFRA'
+         if 'clean_ra' in f1 and not params[4].altered:
+            params[4].value = 'clean_ra'
          params[4].filter.list = f2
          if 'SF_EOID' in f1 and not params[5].altered:
             params[5].value = 'SF_EOID'
@@ -417,6 +417,7 @@ class MergeData(object):
          printMsg('Setting spatial duplicates to ' + fldUse.Name + ' = 0')
          df = fc2df(lyr, ['OBJECTID', 'uniqID_poly', fldRA.Name, fldDateCalc.Name])
          # sort decreasing by [RA, date, objectid (in case locations have same date/RA)]
+         # coulddo: adjust ordering here (date first? RA first?)
          dfmax = df.sort_values([fldRA.Name, fldDateCalc.Name, 'OBJECTID'], ascending=False).drop_duplicates('uniqID_poly')
          # get a list of OIDs for the highest [RA, Date, OBJECTID]
          oids = list(dfmax.OBJECTID)
@@ -466,11 +467,12 @@ class GrpOcc(object):
          direction="Input")
 
       grpFld = arcpy.Parameter(
-         displayName="Field for group IDs",
+         displayName="Field to contain group IDs",
          name="grpFld",
          datatype="GPString",
          parameterType="Required",
          direction="Input")
+      grpFld.value = 'sdm_grpid'
 
       network = arcpy.Parameter(
          displayName="Network dataset (requires Network Analyst extension)",

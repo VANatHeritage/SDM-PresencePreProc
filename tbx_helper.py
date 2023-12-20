@@ -1,5 +1,5 @@
 # Helper functions for python toolbox
-
+import time
 import arcpy
 import datetime
 import os
@@ -54,11 +54,12 @@ initFields = [fldSpCode, fldSrcTab, fldSrcFID, fldSFID, fldEOID, fldUse, fldUseW
 initDissList = [f.Name for f in initFields]
 initFieldsFull = [[f.Name, f.Type, f.Name, f.Length] for f in initFields]
 
-# Date calculation logic. Used in AddInitFields
+
 def getStdDate(Date):
-   # Import regular expressions module
-   import re
-   
+   # Date calculation logic. Used in AddInitFields
+   default_y = '0000'
+   default_m_d = '00'
+
    # Set up some regular expressions for pattern matching dates
    p1 = re.compile(r'^[1-2][0-9][0-9][0-9]-[0-1][0-9]-[0-9][0-9]$') # yyyy-mm-dd
    p2 = re.compile(r'^[1-2][0-9][0-9][0-9]-[0-1][0-9]$') # yyyy-mm
@@ -80,11 +81,11 @@ def getStdDate(Date):
    elif p2.match(Date):
       yyyy = p2.match(Date).group()[:4]
       mm = p2.match(Date).group()[5:7]
-      dd = '00'
+      dd = default_m_d
    elif p3.match(Date):
       yyyy = p3.match(Date).group()[:4]
-      mm = '00'
-      dd = '00'
+      mm = default_m_d
+      dd = default_m_d
    elif p4.match(Date):
       # This is a pain in the ass.
       yyyy = p4.match(Date).group()[-4:]
@@ -92,14 +93,20 @@ def getStdDate(Date):
       dd = p4d.search(Date).group().replace('/', '').zfill(2)
    else:
       # Try to get any four digits in a row
-      y0 = re.findall('(?<!\d)\d{4}(?!\d)', Date)[-1:]
+      y0 = re.findall('(?<!\d)\d{4}(?!\d)', Date)
       if len(y0) == 0:
-         yyyy = '0000'
+         yyyy = default_y
       else:
          yyyy = y0[0]
-      mm = '00'
-      dd = '00'
-   
+      mm = default_m_d
+      dd = default_m_d
+   # set defaults if all zeros
+   if yyyy == '0000':
+      yyyy = default_y
+   if mm == '00':
+      mm = default_m_d
+   if dd == '00':
+      dd = default_m_d
    yyyymmdd = yyyy + '-' + mm + '-' + dd
    return yyyymmdd
 
@@ -315,14 +322,16 @@ def SpatialCluster(inFeats, sepDist, fldGrpID='grpID'):
    return inFeats
 
 
-# internal spatial clustering function over network dataset
 def SpatialClusterNetwork(species_pt, species_ln, species_py, flowlines, catchments, network, dams, sep_dist, snap_dist,
                           output_lines):
    """Clusters features based on specified search distance across a linear network dataset.
    Features within the search distance of each other will be assigned to the same group.
    :param species_pt, species_ln, species_py = The input features to group
    :param sepDist = The distance with which to group features
-   Adapted from script by Molly Moore, PANHP"""
+   Adapted from script by Molly Moore, PANHP
+
+   # internal spatial clustering function over network dataset
+   """
 
    # testing
    # network = r'F:\David\GIS_data\NHDPlus_HR\VA_HydroNetHR.gdb\HydroNet\HydroNet_ND'
@@ -608,11 +617,12 @@ def make_gdb_name(string):
    return nm
 
 
-# used in MergeData
 def GetOverlapping(inList, outPolys, summFlds=None):
    """Internal function for MergeData. Generates all unique polygons from list of one or more polygon FCs.
    If summFlds is provided, final dataset will be 'flat' (no overlap), with only ID, Count, and summary
-   fields returned."""
+   fields returned.
+   Used in MergeData.
+   """
 
    # unique polygon ID to assign to new 'flat' dataset
    polyID = 'uniqID_poly'
